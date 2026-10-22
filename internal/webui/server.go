@@ -82,6 +82,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		next := &incoming
 		next.SetPath(path)
+		// 外置规则文件必须重新读一遍：incoming 是全新对象，不读的话
+		// 用户在设置页点一次保存，白名单与黑名单就会当场失效。
+		if err := next.LoadRuleFiles(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		// 注释布局也要从原文件接过来，否则保存一次就把 config.yaml 的注释全冲掉。
+		if err := next.ReloadLayout(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		next.Normalize()
 		if err := next.Validate(); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "配置校验失败: " + err.Error()})
@@ -157,10 +168,11 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	proxy := s.cfg.Proxy
+	proxy := s.cfg.ResolvedProxy()
 	s.mu.Unlock()
 
-	client, err := assapi.New(config.NormalizeBaseURL(body.BaseURL), body.APIKey, proxy, 20*time.Second)
+	// 设置页里填的也可能是 ${ENV} 占位符，真正发请求时才展开。
+	client, err := assapi.New(config.NormalizeBaseURL(config.ExpandEnv(body.BaseURL)), config.ExpandEnv(body.APIKey), proxy, 20*time.Second)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return

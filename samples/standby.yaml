@@ -1,0 +1,28 @@
+# AniSync 白名单：副 RSS 只放这里点过名的组。
+#
+# 副 RSS 是「点名制」—— 没在这个文件里出现的组，一律不进副 RSS。
+# 不点名就按发布条数兜底的话，会被搬运组和实例侧的伪组名刷满
+# （实测：geckyzz、生肉/不明字幕、20190912、마신 这些全挤进来）。
+#
+# 在 config.yaml 里这样引用：
+#   rules:
+#     primaryFiles: [standby.yaml]
+#     maxStandby: 1
+#
+# 顺序就是 priority，数字越小越优先。maxStandby=1 时只有排第一的组会进副 RSS；
+# 想「所有版本都收」就把 config.yaml 里的 maxStandby 调大（比如 3），
+# 下面点过名的组会按顺序依次填进去。
+#
+# 换口味只改这个文件，主配置不用动：
+#   LoliHouse > Nix-Raws > ToonsHub   把 ANi / Erai-raws 删掉或把 priority 调到 100 以后
+#   Nix-Raws > ToonsHub               只留这两行
+#   ToonsHub                          只留 ToonsHub 一行
+#
+# 下面这几个是「正常的放流组」。其余放流组要么是搬运，要么是实例侧的伪组名，不要。
+# 每个组都带上它在不同站点上的别名，否则镜像匹配不上。
+
+- {name: LoliHouse, match: '(?i)lolihouse|萝莉屋', priority: 10, scope: standby}
+- {name: Nix-Raws,  match: '(?i)nix-raws|nc-raws', priority: 20, scope: standby}
+- {name: ANi,       match: '(?i)\bani\b|baha',     priority: 30, scope: standby}
+- {name: ToonsHub,  match: '(?i)toonshub',         priority: 40, scope: standby}
+- {name: Erai-raws, match: '(?i)erai-raws',        priority: 50, scope: standby}

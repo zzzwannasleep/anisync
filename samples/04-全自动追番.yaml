@@ -1,0 +1,112 @@
+# AniSync 配置样例 04：全自动追番（不用打开 ANI-RSS 的 WebUI 加订阅）
+#
+# 这是 AniSync 存在的理由：让它自己扫出现在有什么番剧在放，把实例里还没有的补进去。
+# 规则部分和 01 号一样（中文优先），差别只在最下面的 discover 段和 sync.intervalMinutes。
+#
+# ⚠️ 这份样例会把新订阅**直接启用**（discover.enable: true），也就是会自动开始下载。
+#    第一次用请先跑只读的那条命令看一眼，确认扫出来的都是你要的：
+#
+#        AniSync discover            看现在有什么番剧在放（不碰实例）
+#        AniSync plan --discover     看哪些是实例里没有的、会新增什么（只读）
+#        AniSync sync -y             确认无误后再执行
+#
+#    不放心就把 discover.enable 改成 false：订阅照样会自动建好，但保持停用不下载，
+#    你在 ANI-RSS 里点一下启用即可。
+#
+# 怎么用：整份复制成 config.yaml，改 instances，然后按上面的顺序跑一遍。
+
+listen: 127.0.0.1:51837
+# proxy: http://127.0.0.1:7890
+
+sources:
+  instance: ""
+  order: [anibt, animegarden, mikan, nyaa]
+  stopOnFirstMatch: false
+  timeoutSeconds: 25
+  cacheMinutes: 720
+
+rules:
+  maxStandby: 3
+
+  primary:
+    # 语言类型优先，注意简繁要排在繁日前面
+    - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|\bchs\b', priority: 10, scope: main}
+    - {name: 简繁日内封, match: '(?i)简繁|簡繁|内封|內封',         priority: 20, scope: main}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|\bcht\b',      priority: 30, scope: main}
+
+    # 中文组偏好
+    - {name: 桜都字幕组,     match: '(?i)sakurato|桜都|樱都',        priority: 40, scope: main}
+    - {name: 喵萌奶茶屋,     match: '(?i)喵萌奶茶屋|喵萌|nyamoe',    priority: 41, scope: main}
+    - {name: 绿茶字幕组,     match: '(?i)绿茶字幕组|綠茶字幕組',     priority: 42, scope: main}
+    - {name: 北宇治字幕组,   match: '(?i)北宇治',                    priority: 43, scope: main}
+    - {name: 三明治摆烂组,   match: '(?i)三明治摆烂组|三明治擺爛組', priority: 44, scope: main}
+    - {name: 悠哈璃羽字幕社, match: '(?i)悠哈璃羽',                  priority: 45, scope: main}
+    - {name: 猎户发布组,     match: '(?i)猎户发布组|獵戶發佈組',     priority: 46, scope: main}
+    - {name: 雪飄工作室,     match: '(?i)雪飄|雪飘|flsnow',          priority: 47, scope: main}
+    - {name: 拨雪寻春,       match: '(?i)拨雪寻春|撥雪尋春',         priority: 48, scope: main}
+    - {name: 亿次研同好会,   match: '(?i)亿次研|億次研',             priority: 49, scope: main}
+    - {name: MingYSub,       match: '(?i)mingysub',                  priority: 51, scope: main}
+    - {name: TSDM字幕组,     match: '(?i)tsdm',                      priority: 53, scope: main}
+    - {name: SweetSub,       match: '(?i)sweetsub',                  priority: 55, scope: main}
+
+    # 副 RSS 的放流组排名不写在这里，放在 standby.yaml。见下面 rules.primaryFiles。
+
+  # 白名单（放流组排名）与黑名单各放一个文件，不写死在主配置里：
+  #   standby.yaml   副 RSS 只放这里点过名的组，顺序就是优先级
+  #   deny.yaml      明确不要的组
+  # 自动发现一次会带出上百部番剧，副 RSS 更得靠点名制，否则会被搬运组刷满。
+  primaryFiles: [standby.yaml]
+  denyFiles: [deny.yaml]
+
+  # 内联的黑名单：个人口味放在这里。
+  deny:
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    apiKey: ${ANISYNC_KEY}
+
+# 手写的 targets 优先级高于自动发现：同一个番剧两边都有时，只用手写那条。
+# 所以需要单独规定季度/偏移的番剧写在这里，其余交给 ANI-RSS 自己推断。
+targets: []
+#  - title: 冰之城墙
+#    bgmId: "665390"
+#    season: 2
+#    offset: -12
+#    standbyOffset: -12
+
+sync:
+  # 后台自动爬取间隔（分钟）。托盘模式（AniSync tray）下生效：每小时自己扫一遍，
+  # 有新的番剧就建订阅、有 RSS 变了就改掉。设 0 就只在手动跑 sync 时执行。
+  intervalMinutes: 60
+  preview: false
+  addMissing: false     # 自动发现不依赖这一项，它由 discover.enabled 控制
+
+discover:
+  enabled: true
+  # 发现来源，可多选：
+  #   animegarden          扫 AnimeGarden 的主题列表。只列出真的有字幕组在做的番剧，默认用它
+  #   bangumi-calendar     扫 Bangumi 每日放送表。当季新番全集，会把没人做的番剧也带出来
+  #   bangumi-collections  扫某个 Bangumi 用户的「在看」。要填下面的 bgmUser
+  sources: [animegarden]
+
+  # sources 里用了 bangumi-collections 才需要填（用户名或 uid，收藏要公开）。
+  # bgmUser: your_bgm_username
+
+  # 「首播日期在最近多少天内」算在放。180 天覆盖当季 + 上一季；
+  # 注意这里是首播日期不是更新时间，所以还没开播的新番也在范围内。
+  days: 180
+
+  # 每个实例单次最多新增多少条。第一次跑别设太大，先看看扫出来的东西对不对。
+  limit: 20
+
+  # 发现出来的新订阅是否直接启用。true = 建好就开始下载。
+  enable: true
+
+  # 标题黑名单（正则）。命中就不发现 —— 用来挡掉你根本不看的类型。
+  exclude:
+    - '合集'
+    - '(?i)国漫|国创'
+    - '(?i)日剧|特摄'
+    - '(?i)总集篇| recap'

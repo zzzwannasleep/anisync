@@ -3,28 +3,32 @@
 ## 目录职责
 
 ```
-cmd/anisync          命令行入口：init / check / probe / plan / sync / serve / tray
+cmd/anisync          命令行入口：init / check / discover / probe / plan / sync / serve / tray
 internal/workdir     运行期文件位置（程序同目录）
 internal/config      配置读写：YAML、环境变量展开、校验与默认值
 internal/cache       站点数据磁盘缓存（TTL + 原子落盘）
 internal/assapi      ANI-RSS API 客户端
+internal/discover    自动发现：扫 AnimeGarden / Bangumi，产出待新增的番剧
 internal/source      站点适配层（anibt / animegarden / mikan / nyaa）
 internal/rules       规则编译、打分、去重
 internal/planner     计划生成与执行
 internal/webui       本地设置页（内嵌资源，无前端构建步骤）
 internal/tray        托盘：Windows 通知区域、macOS 菜单栏
+samples/             开箱即用的配置样例与组清单
 scripts/             构建与打包脚本
 docs/                文档
 ```
 
-依赖方向单向：`cmd → planner / webui / tray → rules / source / cache / config → assapi / httpx`。
+依赖方向单向：`cmd → planner / webui / tray → discover / rules / source / cache / config → assapi / httpx`。
 
 ## 数据流
 
 ```
-listAni（每个实例）
-      │  订阅列表
-      ▼
+discover（可选）──► 现在在放的番剧 ──► 自动生成的 targets
+      │                                      │
+listAni（每个实例）                           │
+      │  订阅列表                            │
+      ▼                                      │
 queryOf ──► source.Registry ──► 候选 RSS（含字幕组名与最近的资源标题）
       │                              │
       │                              ▼
@@ -33,7 +37,7 @@ queryOf ──► source.Registry ──► 候选 RSS（含字幕组名与最�
       │                              ├─► 首项 = 主 RSS
       │                              └─► rules.Standby（副 RSS 排序）→ 副 RSS 列表
       ▼
-diff（与实例现状比对）──► plan（update / add / noop）
+diff（与实例现状比对）──► plan（update / add / noop）◄──┘
       │
       ▼
 setAni（update） / rssToAni + addAni（add）
@@ -41,7 +45,19 @@ setAni（update） / rssToAni + addAni（add）
 
 ## 关键设计
 
+**自动发现复用新增链路，不另造一套写入逻辑。** `discover` 只负责「现在有什么番剧在放」，
+产出的 `config.Target` 和用户手写的 `targets` 走同一条路：同样的站点爬取、同样的规则排序、
+同样的 `rssToAni` → `addAni`。这样自动发现不需要理解 ANI-RSS 的字段规则，也不会绕过任何校验。
+去重按 `bgmId` 精确比对（只比标题会因为中/日文名不同而漏），手写的 `targets` 优先于发现结果，
+避免用户为某部番剧规定的季度与偏移被自动生成的空值顶掉。
+
 **setAni 是整对象覆盖语义。** ANI-RSS 服务端用 `BeanUtil.copyProperties` 拷贝，null 也会覆盖过去。因此 `applyDesired` 从不构造局部对象，而是把 `listAni` 拿到的原始 map 改完再整份回传，避免把未修改的字段洗掉。
+
+**备用 RSS 列表整体重建，但偏移必须继承。** ANI-RSS 会按每个 RSS 的实际集数自动推断 `StandbyRss.offset`（`AniUtil.autoOffset`）。AniSync 每次都重建 `standbyRssList`，所以先按 URL 把订阅里已有的 `offset` 继承回来，只有配置显式写了 `standbyOffset` 才覆盖。`diff` 比较备用列表时把 `url#offset` 一起比，否则「只改了偏移」会被误判成无需变更。季度与主 RSS 偏移同理：配置留空（指针为 nil）就不写这两个字段，绝不把 ANI-RSS 的推断结果洗掉。
+
+**季度与偏移按番剧给，偏移按 RSS 分。** 与 ANI-RSS 的 `Ani.season` / `Ani.offset` / `StandbyRss.offset` 对应：`targets` 的一条配置就是「一个番剧」，`season` 给一个值（该番剧的所有订阅共用），`offset` 管主 RSS、`standbyOffset` 管副 RSS。`matchTarget` 先按 `bgmId` 精确匹配（订阅的 `bgmUrl` 或 RSS 参数里的 `bgmId`），再按标题包含匹配 —— 订阅标题带年份与 tmdbid（如「冰之城墙 (2026) [tmdbid=283428]」），只能包含匹配，标题同时看 `title` / `jpTitle` / `mikanTitle`。`offsetsOf` 的优先级是「命中的 target > 全局 `sync` 值 > 不碰」，所以番剧级配置对**已有订阅**同样生效，不只是新增。命中的番剧名会记在 `Action.Target` 里，计划和 Web 设置页都据此说明偏移是谁规定的。
+
+**`${ENV}` 只在发请求时展开。** 展开发生在 `Instance.Resolve()` 与 `Config.ResolvedProxy()` 里，配置结构里始终保留占位符原文，`Validate` 也按展开后的值判断。Web 设置页是「读配置 → 改 → 存回」的闭环：如果在 `Load` 时就把密钥展开进内存，用户点一次保存就会把明文写进 `config.yaml`。同理由 `ResolvedProxy()` 兜底 `ANISYNC_PROXY`，避免环境变量被固化进配置文件。
 
 **站点数据来自实例。** AniBT / AnimeGarden / Mikan 不自己爬网页，而是调用实例的 `aniBTGroup` / `animeGardenGroup` / `mikanGroup` 接口。实例怎么认这些站点，AniSync 就怎么认，拿到的是实例自己拼好的 RSS 地址，站点改版不会导致各写一份解析。`sources.instance` 指定借用哪个实例，留空取第一个启用的实例。
 

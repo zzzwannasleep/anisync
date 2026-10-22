@@ -156,20 +156,70 @@ func TestStandbyScopeSelectsRawReleaseGroup(t *testing.T) {
 	}
 }
 
-// 没有配置 standby 规则时，副 RSS 行为要和以前一致（按热度兜底），不能变空。
-func TestStandbyFallsBackToHeatWithoutStandbyRules(t *testing.T) {
+// 副 RSS 只放被 standby 规则点过名的组。
+//
+// 这里以前是「没命中就按发布条数兜底」，真实数据里那样会被搬运组刷满：
+// Kirara Fantasia（2833 条样本）、生肉/不明字幕、20190912 这类实例侧伪组名，
+// 全靠热度挤进副 RSS，副 RSS 也就没意义了。所以现在没点名的一律不要。
+func TestStandbyOnlyKeepsNamedGroups(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "字幕组", Match: `桜都`, Priority: 10},
+		{Name: "LoliHouse", Match: `LoliHouse`, Priority: 10, Scope: ScopeStandby},
+		{Name: "ToonsHub", Match: `ToonsHub`, Priority: 20, Scope: ScopeStandby},
+	}, nil, 5)
+
+	ranked := engine.Rank([]source.Candidate{
+		{Site: "mikan", Label: "桜都字幕组", SiteOrder: 0, Weight: 9, URL: "sub"},
+		{Site: "anibt", Label: "热门搬运组", SiteOrder: 1, Weight: 9999, URL: "junk"},
+		{Site: "mikan", Label: "生肉/不明字幕", SiteOrder: 4, Weight: 8888, URL: "unknown"},
+		{Site: "nyaa", Label: "ToonsHub", SiteOrder: 2, Weight: 1, URL: "toons"},
+		{Site: "anibt", Label: "LoliHouse", SiteOrder: 3, Weight: 1, URL: "loli"},
+	})
+	standby := engine.Standby(ranked[1:])
+
+	if len(standby) != 2 {
+		t.Fatalf("副 RSS 只应有被点名的两个组，实际 %v", labels(standby))
+	}
+	// 顺序由规则的 priority 决定：LoliHouse(10) 排在 ToonsHub(20) 前面
+	if standby[0].URL != "loli" || standby[1].URL != "toons" {
+		t.Fatalf("副 RSS 应按规则优先级排序，实际 %v", labels(standby))
+	}
+}
+
+// 没配任何 standby 规则时副 RSS 就是空的：没点名就是不要，不拿热度凑数。
+func TestStandbyEmptyWithoutStandbyRules(t *testing.T) {
 	engine := mustEngine(t, []Rule{{Name: "字幕组", Match: `桜都`, Priority: 10}}, nil, 2)
 	ranked := engine.Rank([]source.Candidate{
 		{Site: "mikan", Label: "桜都字幕组", SiteOrder: 0, Weight: 9, URL: "a"},
-		{Site: "anibt", Label: "小透明组", SiteOrder: 1, Weight: 1, URL: "b"},
 		{Site: "nyaa", Label: "热门组", SiteOrder: 2, Weight: 50, URL: "c"},
 	})
-	standby := engine.Standby(ranked[1:])
-	if len(standby) != 2 {
-		t.Fatalf("应保留 2 条副 RSS，实际 %d: %v", len(standby), labels(standby))
+	if standby := engine.Standby(ranked[1:]); len(standby) != 0 {
+		t.Fatalf("没有 standby 规则时副 RSS 应为空，实际 %v", labels(standby))
 	}
-	if standby[0].URL != "c" {
-		t.Fatalf("没有 standby 规则时按热度排序，热门组应排第一，实际 %v", labels(standby))
+}
+
+// maxStandby 决定最多留几条。多数人只要一条备胎；「所有版本都收」的人把它调大，
+// 并在规则里把想要的组都写成 scope: standby。
+func TestStandbyRespectsMaxStandby(t *testing.T) {
+	primary := []Rule{
+		{Name: "LoliHouse", Match: `LoliHouse`, Priority: 10, Scope: ScopeStandby},
+		{Name: "Nix-Raws", Match: `Nix-Raws`, Priority: 20, Scope: ScopeStandby},
+		{Name: "ToonsHub", Match: `ToonsHub`, Priority: 30, Scope: ScopeStandby},
+	}
+	candidates := []source.Candidate{
+		{Site: "anibt", Label: "LoliHouse", SiteOrder: 0, URL: "loli"},
+		{Site: "anibt", Label: "Nix-Raws", SiteOrder: 1, URL: "nix"},
+		{Site: "nyaa", Label: "ToonsHub", SiteOrder: 2, URL: "toons"},
+	}
+
+	one := mustEngine(t, primary, nil, 1)
+	if standby := one.Standby(one.Rank(candidates)); len(standby) != 1 || standby[0].URL != "loli" {
+		t.Fatalf("maxStandby=1 时应只留优先级最高的 LoliHouse，实际 %v", labels(standby))
+	}
+
+	all := mustEngine(t, primary, nil, 3)
+	if standby := all.Standby(all.Rank(candidates)); len(standby) != 3 {
+		t.Fatalf("maxStandby=3 时应三条全留，实际 %v", labels(standby))
 	}
 }
 

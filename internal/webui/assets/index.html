@@ -3,145 +3,590 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AniSync · 多实例主副 RSS 打点</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0c0f">
+<title>AniSync · 主副 RSS 打点</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230e1116'/%3E%3Cg fill='none' stroke='%2331c48d' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M20 12a8 8 0 0 1-13.7 5.5M4 12a8 8 0 0 1 13.7-5.5'/%3E%3Cpath d='M17.5 3.5v3h-3M6.5 20.5v-3h3'/%3E%3C/g%3E%3C/svg%3E">
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e9ef; --dim:#8b93a5; --accent:#3ba776; --warn:#c9772f; --err:#c0453f; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.6 "Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
-  header { display:flex; align-items:center; gap:12px; padding:16px 22px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
-  header h1 { font-size:16px; margin:0; font-weight:600; }
-  header .path { color:var(--dim); font-size:12px; margin-left:auto; font-family:ui-monospace,Consolas,monospace; }
-  main { max-width:1220px; margin:0 auto; padding:22px; display:grid; gap:18px; }
-  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
-  section > h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 12px; font-weight:600; }
-  .row { display:grid; gap:8px; align-items:center; }
-  .inst { grid-template-columns: 130px 1fr 1fr 74px 74px; }
-  .rule { grid-template-columns: 140px 1fr 74px 104px 104px 60px; }
-  .deny { grid-template-columns: 1fr 140px 60px; }
-  .head { color:var(--dim); font-size:12px; margin-bottom:4px; }
-  input, select { background:#0c0e13; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 9px; font:inherit; width:100%; }
-  input:focus, select:focus { outline:1px solid var(--accent); border-color:var(--accent); }
-  button { background:#20242e; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
-  button:hover { border-color:#3a4252; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#04120b; font-weight:600; }
-  button.danger { color:#e28b86; }
-  button:disabled { opacity:.5; cursor:default; }
-  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .hint { color:var(--dim); font-size:12px; }
-  .status { margin-left:auto; font-size:12px; color:var(--dim); }
-  .status.ok { color:var(--accent); } .status.err { color:var(--err); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--dim); font-weight:600; font-size:12px; }
-  code { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#9fd8bb; word-break:break-all; }
-  .tag { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid var(--line); color:var(--dim); }
-  .tag.update { color:#e0b070; border-color:#4a3a22; }
-  .tag.add { color:#7fd0a0; border-color:#22452f; }
-  .tag.noop { color:var(--dim); }
-  .chips { display:flex; gap:6px; flex-wrap:wrap; }
-  .chip { border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:pointer; font-size:12px; background:#0c0e13; }
-  .chip.on { border-color:var(--accent); color:var(--accent); }
-  .grid2 { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:10px; }
+/* ---------- 令牌：颜色 / 圆角 / 阴影 / 动效 / 字号 ---------- */
+:root{
+  color-scheme:dark;
+
+  --bg:#0a0c0f;
+  --side:#0e1116;
+  --surface:#101317;
+  --surface-2:#151a20;
+  --surface-3:#1b2129;
+  --line:#222833;
+  --line-2:#2d353f;
+
+  --text:#e9ecf1;
+  --text-2:#9aa4b2;
+  --text-3:#6d7684;
+
+  --accent:#31c48d;
+  --accent-bright:#4ddca6;
+  --accent-soft:rgba(49,196,141,.12);
+  --accent-line:rgba(49,196,141,.38);
+  --accent-ink:#04140d;
+
+  --warn:#e0a458;
+  --err:#f2685f;
+
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-full:999px;
+
+  --sh-1:0 1px 2px rgba(0,0,0,.4);
+  --sh-2:0 1px 2px rgba(0,0,0,.35), 0 10px 28px -18px rgba(0,0,0,.8);
+  --sh-3:0 2px 4px rgba(0,0,0,.45), 0 18px 44px -20px rgba(0,0,0,.85);
+
+  --motion-fast:120ms;
+  --motion-base:200ms;
+  --motion-medium:280ms;
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+
+  --font:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Consolas,monospace;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.55 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+button,input,select{font:inherit;color:inherit}
+svg.i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- 壳 ---------- */
+.app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-5) var(--sp-3) var(--sp-4);background:var(--side);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;padding:0 var(--sp-2)}
+.brand .mark{display:grid;place-items:center;width:30px;height:30px;border-radius:var(--r-sm);background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-bright)}
+.brand .mark svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.brand b{display:block;font-weight:600;letter-spacing:-.01em}
+.brand small{display:block;font-size:11px;color:var(--text-3)}
+
+.nav{position:relative;display:flex;flex-direction:column;gap:2px}
+.nav-indicator{position:absolute;left:0;top:0;width:2px;height:20px;border-radius:var(--r-full);background:var(--accent);transform:translateY(0);transition:transform var(--motion-base) var(--ease-out)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 13px;border-radius:var(--r-sm);color:var(--text-2);text-decoration:none;transition:background-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out)}
+.nav-item:hover{background:var(--surface-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.nav-item:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+.nav-item[aria-current="true"]{background:var(--accent-soft);color:var(--accent-bright)}
+.nav-item .n{margin-left:auto;font:11px/1 var(--mono);color:var(--text-3);font-variant-numeric:tabular-nums}
+
+.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:var(--sp-3) var(--sp-2) 0;border-top:1px solid var(--line)}
+.row-s{display:flex;align-items:center;gap:7px;color:var(--text-3)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--text-3);flex:none;transition:background-color var(--motion-base) var(--ease-out)}
+.dot.ok{background:var(--accent)}
+.dot.dirty{background:var(--warn)}
+.dot.err{background:var(--err)}
+
+.main{display:flex;flex-direction:column;min-width:0}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:var(--sp-4);padding:var(--sp-3) var(--sp-6);background:rgba(10,12,15,.82);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.tb-title{display:flex;align-items:baseline;gap:10px;min-width:0}
+.tb-title h1{font-size:20px;font-weight:600;letter-spacing:-.02em;white-space:nowrap}
+.path-chip{font:11px/1 var(--mono);color:var(--text-3);padding:4px 8px;border:1px solid var(--line);border-radius:var(--r-full);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38ch}
+.tb-actions{margin-left:auto;display:flex;align-items:center;gap:var(--sp-3)}
+.status{display:inline-flex;align-items:center;gap:6px;color:var(--text-3);max-width:44ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status.ok{color:var(--accent-bright)}
+.status.err{color:var(--err)}
+
+.content{display:flex;flex-direction:column;gap:var(--sp-4);padding:var(--sp-5) var(--sp-6) 96px;max-width:1180px;width:100%}
+
+/* ---------- 面板 ---------- */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-5);box-shadow:var(--sh-2);scroll-margin-top:84px}
+.panel-head{display:flex;align-items:center;gap:10px;margin-bottom:var(--sp-2)}
+.panel-head h2{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.panel-head .idx{font:11px/1 var(--mono);color:var(--text-3);padding:3px 6px;border:1px solid var(--line);border-radius:var(--r-xs)}
+.lede{color:var(--text-2);max-width:78ch;margin-bottom:var(--sp-4)}
+.lede code{font:11px var(--mono);color:var(--accent-bright);background:var(--accent-soft);border-radius:var(--r-xs);padding:1px 5px}
+
+/* ---------- 行 / 网格 ---------- */
+.list{display:flex;flex-direction:column;gap:2px}
+.row{display:grid;gap:var(--sp-2);align-items:center;padding:6px;margin:0 -6px;border-radius:var(--r-sm);transition:background-color var(--motion-fast) var(--ease-out)}
+.row:focus-within{background:var(--surface-2)}
+.row-head{display:grid;gap:var(--sp-2);padding:0 6px;margin:0 -6px var(--sp-2);font-size:11px;color:var(--text-3)}
+.row.enter{animation:row-in var(--motion-base) var(--ease-out)}
+.row.leave{animation:row-out var(--motion-fast) var(--ease-out) forwards}
+@keyframes row-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+@keyframes row-out{to{opacity:0;transform:translateY(-4px)}}
+
+.inst{grid-template-columns:minmax(120px,1fr) minmax(180px,1.5fr) minmax(160px,1.4fr) auto auto}
+.rule{grid-template-columns:minmax(110px,.8fr) minmax(190px,1.6fr) 72px 96px 104px auto}
+.target{grid-template-columns:minmax(140px,1.4fr) 108px 64px 84px 84px 108px 52px auto}
+.deny{grid-template-columns:1fr 150px auto}
+
+.field{display:flex;flex-direction:column;gap:6px}
+.field > span{font-size:11px;color:var(--text-3)}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--sp-3)}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--sp-3)}
+.toolbar{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)}
+.toolbar .spacer{margin-left:auto}
+.note{color:var(--text-3)}
+
+/* ---------- 控件 ---------- */
+.input,select{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 9px;transition:border-color var(--motion-fast) var(--ease-out),background-color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out)}
+.input:hover,select:hover{border-color:var(--line-2)}
+.input:focus,select:focus{outline:none;border-color:var(--accent);background:#0d1116;box-shadow:0 0 0 3px var(--accent-soft)}
+.input:focus-visible,select:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.input::placeholder{color:var(--text-3)}
+.input.mono{font-family:var(--mono)}
+input[type=number]{font-variant-numeric:tabular-nums}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);cursor:pointer;white-space:nowrap;transition:background-color var(--motion-fast) var(--ease-out),border-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out),transform var(--motion-fast) var(--ease-out)}
+.btn:hover{background:var(--surface-3);border-color:#3b4553;box-shadow:var(--sh-1)}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+.btn[disabled]{opacity:.5;cursor:not-allowed;transform:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{background:var(--accent-bright);border-color:var(--accent-bright)}
+.btn.ghost{background:transparent}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.danger{color:#ef938c;border-color:#3a2b2b;background:transparent}
+.btn.danger:hover{background:rgba(242,104,95,.1);border-color:rgba(242,104,95,.42);box-shadow:none}
+.btn.icon{padding:7px;width:33px}
+.spinner{width:13px;height:13px;border-radius:50%;border:1.6px solid currentColor;border-top-color:transparent;opacity:.85;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r-full);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:background-color var(--motion-fast) var(--ease-out),border-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out)}
+.chip:hover{border-color:#3b4553;color:var(--text)}
+.chip:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+.chip[aria-pressed="true"]{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-bright)}
+.chip .ord{font:11px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--text-3)}
+.chip[aria-pressed="true"] .ord{color:var(--accent-bright)}
+
+.switch{display:inline-flex;align-items:center;gap:9px;color:var(--text-2);cursor:pointer;transition:color var(--motion-fast) var(--ease-out)}
+.switch:hover{color:var(--text)}
+.switch input{appearance:none;flex:none;width:34px;height:20px;margin:0;border-radius:var(--r-full);background:var(--surface-3);border:1px solid var(--line-2);position:relative;cursor:pointer;transition:background-color var(--motion-base) var(--ease-out),border-color var(--motion-base) var(--ease-out)}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#8b95a3;transition:transform var(--motion-base) var(--ease-out),background-color var(--motion-base) var(--ease-out)}
+.switch input:checked{background:var(--accent-soft);border-color:var(--accent)}
+.switch input:checked::after{transform:translateX(14px);background:var(--accent-bright)}
+.switch input:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+
+details.adv{margin-top:var(--sp-4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+details.adv > summary{list-style:none;cursor:pointer;padding:10px 12px;color:var(--text-2);display:flex;align-items:center;gap:8px;transition:color var(--motion-fast) var(--ease-out)}
+details.adv > summary::-webkit-details-marker{display:none}
+details.adv > summary:hover{color:var(--text)}
+details.adv > summary:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;border-radius:var(--r-sm)}
+details.adv > summary .caret{transition:transform var(--motion-base) var(--ease-out)}
+details.adv[open] > summary .caret{transform:rotate(90deg)}
+details.adv .adv-body{padding:0 12px 14px}
+
+/* ---------- 空状态 / 骨架 ---------- */
+.empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:var(--sp-8) var(--sp-4);text-align:center;border:1px dashed var(--line-2);border-radius:var(--r-md);color:var(--text-2)}
+.empty svg{width:22px;height:22px;stroke:var(--text-3);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.empty .note{max-width:52ch}
+.sk{height:11px;border-radius:var(--r-xs);background:linear-gradient(90deg,#171c22,#20272f,#171c22);background-size:200% 100%;animation:sk 1.2s linear infinite}
+@keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
+.sk-rows{display:flex;flex-direction:column;gap:12px;padding:var(--sp-4);border:1px solid var(--line);border-radius:var(--r-md)}
+
+/* ---------- 结果 ---------- */
+.summary{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-3)}
+.stats{display:flex;gap:var(--sp-2)}
+.stat{display:flex;flex-direction:column;gap:2px;min-width:76px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.stat .k{font-size:11px;color:var(--text-3)}
+.stat .v{font:600 20px/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.stat.hi{border-color:var(--accent-line);background:var(--accent-soft)}
+.stat.hi .v{color:var(--accent-bright)}
+.sites{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.site{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-3);border:1px solid var(--line);border-radius:var(--r-full);padding:4px 9px}
+.site b{color:var(--text-2);font-weight:600;font-variant-numeric:tabular-nums}
+.site.bad{border-color:rgba(242,104,95,.4);color:#ef938c}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-md);animation:fade var(--motion-base) var(--ease-out)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+table{width:100%;border-collapse:collapse}
+thead th{position:sticky;top:0;z-index:1;background:#12161c;text-align:left;font-size:11px;font-weight:600;color:var(--text-3);padding:9px 12px;border-bottom:1px solid var(--line)}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background-color var(--motion-fast) var(--ease-out)}
+tbody tr:hover{background:var(--surface-2)}
+td.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-all;color:var(--text-2)}
+td.act{white-space:nowrap}
+
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:var(--r-full);border:1px solid var(--line-2);color:var(--text-2)}
+.tag.update{border-color:rgba(224,164,88,.4);color:#e6b877}
+.tag.add{border-color:var(--accent-line);color:var(--accent-bright)}
+.tag.skip{border-color:var(--line);color:var(--text-3)}
+.tag.target{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-bright)}
+
+.diff{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;padding:2px 0}
+.diff .fld{font:11px/1.5 var(--mono);color:var(--text-3);border:1px solid var(--line);border-radius:var(--r-xs);padding:0 6px}
+.diff .from{font-family:var(--mono);color:var(--text-3);word-break:break-all}
+.diff .arw{color:var(--text-3)}
+.diff .to{font-family:var(--mono);color:var(--text);word-break:break-all}
+
+/* ---------- toast ---------- */
+.toast-wrap{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;gap:8px}
+.toast{display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--surface-2);box-shadow:var(--sh-3);animation:toast-in var(--motion-medium) var(--ease-out),toast-out var(--motion-base) var(--ease-out) 2800ms forwards}
+.toast.err{animation-delay:0s,6000ms}
+.toast svg.i{width:16px;height:16px}
+.toast.ok svg.i{color:var(--accent-bright)}
+.toast.err svg.i{color:var(--err)}
+@keyframes toast-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes toast-out{to{opacity:0;transform:translateY(6px)}}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:1020px){
+  .content{padding:var(--sp-4) var(--sp-4) 96px}
+  .inst,.rule,.target,.deny{grid-template-columns:1fr 1fr}
+  .row-head{display:none}
+}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;padding:var(--sp-4);gap:var(--sp-3);border-right:0;border-bottom:1px solid var(--line)}
+  .nav{flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:2px}
+  .nav-indicator{display:none}
+  .nav-item{white-space:nowrap}
+  .nav-item .n{display:none}
+  .side-foot{display:none}
+  .topbar{padding:var(--sp-3) var(--sp-4)}
+  .path-chip{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  .sk{animation-duration:1.2s !important;animation-iteration-count:infinite !important}
+  .spinner{animation-duration:.7s !important;animation-iteration-count:infinite !important}
+}
 </style>
 </head>
 <body>
-<header>
-  <strong style="color:var(--accent)">AniSync</strong>
-  <h1>多 ANI-RSS 实例 · 主副 RSS 自动打点</h1>
-  <span class="path" id="cfgPath"></span>
-</header>
 
-<main>
-  <section>
-    <h2>ANI-RSS 实例</h2>
-    <div id="instances"></div>
-    <div class="toolbar" style="margin-top:10px">
-      <button onclick="addInstance()">+ 添加实例</button>
-      <span class="hint">apiKey 支持 <code>${ENV_NAME}</code> 写法，避免明文落盘</span>
-    </div>
-  </section>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18 3v4h-4M6 21v-4h4"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+  <symbol id="i-shift" viewBox="0 0 24 24"><path d="M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v6M15 3v6M6 9h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6Z"/><path d="M12 18v3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5 21 20H3Z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-empty" viewBox="0 0 24 24"><path d="M4 7h16v12H4z"/><path d="M4 7l2-3h12l2 3M9 12h6"/></symbol>
+</svg>
 
-  <section>
-    <h2>站点数据来源与爬取顺序</h2>
-    <div class="grid2">
-      <label class="hint">站点数据取自实例
-        <select id="siteInstance"></select>
-      </label>
-      <label class="hint">站点超时（秒）<input type="number" id="timeout" min="5" max="120"></label>
-      <label class="hint">缓存时长（分钟，0 = 不缓存）<input type="number" id="cacheMinutes" min="0" max="10080"></label>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg><use href="#i-sync"/></svg></span>
+      <span><b>AniSync</b><small>主副 RSS 自动打点</small></span>
     </div>
-    <p class="hint" style="margin:12px 0 6px">爬取优先级（点击切换启用，数字为顺序）：</p>
-    <div class="chips" id="sourceOrder"></div>
-    <div class="toolbar" style="margin-top:10px">
-      <label class="hint"><input type="checkbox" id="stopOnFirst" style="width:auto"> 命中第一个站点就停止（更快，但副 RSS 会少）</label>
-    </div>
-  </section>
 
-  <section>
-    <h2>规则（正则 + 优先级，数字越小越优先）</h2>
-    <p class="hint" style="margin:0 0 10px">
-      匹配对象是「字幕组名 + 最近的资源标题」，所以既能排字幕组，也能排字幕类型。
-      作用域 <code>主 RSS</code> / <code>副 RSS</code> 决定这条规则给谁排序 —— 主 RSS 用字幕组、副 RSS 用放流组就靠它。
-    </p>
-    <div class="row rule head">
-      <span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>限定站点</span><span></span>
-    </div>
-    <div id="rules"></div>
-    <div class="toolbar" style="margin-top:10px">
-      <button onclick="addRule()">+ 添加规则</button>
-      <button onclick="addTypeRules()">+ 预置字幕类型规则</button>
-      <span class="hint">例：<code>简日|CHS</code> 主 RSS 优先级 10；<code>繁日|CHT</code> 主 RSS 优先级 20；<code>toonshub</code> 副 RSS 优先级 10</span>
-    </div>
-  </section>
+    <nav class="nav" id="nav" aria-label="设置分区">
+      <span class="nav-indicator" id="navIndicator" aria-hidden="true"></span>
+      <a class="nav-item" href="#p-instances" data-target="p-instances" data-title="实例"><svg class="i"><use href="#i-server"/></svg><span>实例</span><span class="n" id="nInstances">0</span></a>
+      <a class="nav-item" href="#p-sources" data-target="p-sources" data-title="站点与爬取"><svg class="i"><use href="#i-globe"/></svg><span>站点与爬取</span></a>
+      <a class="nav-item" href="#p-rules" data-target="p-rules" data-title="规则"><svg class="i"><use href="#i-filter"/></svg><span>规则</span><span class="n" id="nRules">0</span></a>
+      <a class="nav-item" href="#p-deny" data-target="p-deny" data-title="排除"><svg class="i"><use href="#i-ban"/></svg><span>排除</span><span class="n" id="nDeny">0</span></a>
+      <a class="nav-item" href="#p-offsets" data-target="p-offsets" data-title="季度与偏移"><svg class="i"><use href="#i-shift"/></svg><span>季度与偏移</span><span class="n" id="nTargets">0</span></a>
+      <a class="nav-item" href="#p-sync" data-target="p-sync" data-title="同步与后台"><svg class="i"><use href="#i-sync"/></svg><span>同步与后台</span></a>
+      <a class="nav-item" href="#p-discover" data-target="p-discover" data-title="自动发现"><svg class="i"><use href="#i-eye"/></svg><span>自动发现</span><span class="n" id="nDiscover">关</span></a>
+      <a class="nav-item" href="#p-run" data-target="p-run" data-title="执行"><svg class="i"><use href="#i-play"/></svg><span>执行</span></a>
+    </nav>
 
-  <section>
-    <h2>排除规则（命中即丢弃）</h2>
-    <div id="deny"></div>
-    <div class="toolbar" style="margin-top:10px">
-      <button onclick="addDeny()">+ 添加排除</button>
-      <label class="hint">每个订阅最多保留 <input type="number" id="maxStandby" style="width:60px" min="0" max="20"> 条副 RSS</label>
+    <div class="side-foot">
+      <div class="row-s"><span class="dot ok" id="saveDot"></span><span id="saveState">已加载配置</span></div>
+      <div class="row-s" id="sideHint">改动写入同目录 config.yaml</div>
     </div>
-  </section>
+  </aside>
 
-  <section>
-    <h2>同步与后台</h2>
-    <div class="grid2">
-      <label class="hint">后台自动爬取间隔（分钟，0 = 不自动）<input type="number" id="intervalMinutes" min="0" max="10080"></label>
-      <label class="hint">本地设置页监听地址<input id="listen" placeholder="127.0.0.1:51837"></label>
-    </div>
-    <div class="toolbar" style="margin-top:10px">
-      <label class="hint"><input type="checkbox" id="preview" style="width:auto"> 预览模式（生成计划但不写入）</label>
-      <label class="hint"><input type="checkbox" id="addMissing" style="width:auto"> 自动新增实例里没有的订阅（默认不启用，避免触发下载）</label>
-    </div>
-  </section>
+  <div class="main">
+    <header class="topbar">
+      <div class="tb-title">
+        <h1 id="pageTitle">实例</h1>
+        <span class="path-chip" id="cfgPath" title=""></span>
+      </div>
+      <div class="tb-actions">
+        <span class="status" id="status" role="status" aria-live="polite"></span>
+        <button class="btn primary" id="saveBtn" onclick="save()" aria-label="保存配置">
+          <svg class="i"><use href="#i-check"/></svg><span>保存配置</span>
+        </button>
+      </div>
+    </header>
 
-  <section>
-    <h2>执行</h2>
-    <div class="toolbar">
-      <button class="primary" onclick="save()">保存配置</button>
-      <button onclick="plan()">预览计划</button>
-      <button class="primary" onclick="sync()">执行同步</button>
-      <span class="status" id="status"></span>
-    </div>
-    <div id="planOut" style="margin-top:14px"></div>
-  </section>
-</main>
+    <main class="content">
+
+      <section class="panel" id="p-instances" aria-labelledby="h-instances">
+        <div class="panel-head"><span class="idx">01</span><h2 id="h-instances">ANI-RSS 实例</h2></div>
+        <p class="lede">一次同步，这里所有启用的实例同时生效。密钥支持 <code>${ENV_NAME}</code> 写法，避免明文落盘。</p>
+        <div class="row row-head inst"><span>名字</span><span>地址</span><span>API Key</span><span></span><span></span></div>
+        <div class="list" id="instances"></div>
+        <div class="toolbar">
+          <button class="btn" onclick="addInstance()" aria-label="添加实例"><svg class="i"><use href="#i-plus"/></svg>添加实例</button>
+        </div>
+      </section>
+
+      <section class="panel" id="p-sources" aria-labelledby="h-sources">
+        <div class="panel-head"><span class="idx">02</span><h2 id="h-sources">站点数据与爬取顺序</h2></div>
+        <p class="lede">字幕组列表由实例的接口给出，AniSync 不自己爬网页。点下面的标签切换启用，数字是优先级顺序。</p>
+        <div class="grid-3">
+          <label class="field"><span>站点数据取自实例</span><select class="input" id="siteInstance" aria-label="站点数据取自实例"></select></label>
+          <label class="field"><span>站点超时（秒）</span><input class="input" type="number" id="timeout" min="5" max="120" placeholder="25" aria-label="站点超时秒数"></label>
+          <label class="field"><span>缓存时长（分钟，0 = 不缓存）</span><input class="input" type="number" id="cacheMinutes" min="0" max="10080" placeholder="720" aria-label="缓存时长分钟"></label>
+        </div>
+        <div class="toolbar" id="sourceOrder" role="group" aria-label="爬取优先级"></div>
+        <div class="toolbar">
+          <label class="switch"><input type="checkbox" id="stopOnFirst" aria-label="命中第一个站点就停止"><span>命中第一个站点就停止</span></label>
+          <span class="note">更快，但副 RSS 候选会变少</span>
+        </div>
+      </section>
+
+      <section class="panel" id="p-rules" aria-labelledby="h-rules">
+        <div class="panel-head"><span class="idx">03</span><h2 id="h-rules">规则</h2></div>
+        <p class="lede">正则 + 优先级，数字越小越优先。匹配对象是「字幕组名 + 最近的资源标题」，所以字幕类型也能排。作用域决定这条规则给主 RSS 还是副 RSS 排序。<b>副 RSS 是点名制</b>：只有被 <code>scope: standby</code> 规则点过名的组才会进副 RSS，没点名的一律不要。</p>
+        <div class="row row-head rule"><span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>限定站点</span><span></span></div>
+        <div class="list" id="rules"></div>
+        <div class="toolbar">
+          <button class="btn" onclick="addRule()" aria-label="添加规则"><svg class="i"><use href="#i-plus"/></svg>添加规则</button>
+          <button class="btn ghost" onclick="addTypeRules()" aria-label="预置字幕类型规则">预置字幕类型规则</button>
+          <span class="note" id="ruleFiles"></span>
+        </div>
+      </section>
+
+      <section class="panel" id="p-deny" aria-labelledby="h-deny">
+        <div class="panel-head"><span class="idx">04</span><h2 id="h-deny">排除</h2></div>
+        <p class="lede">命中即丢弃该候选，用来挡合集、BDRip 这类不想要的东西。</p>
+        <div class="row row-head deny"><span>正则</span><span>备注</span><span></span></div>
+        <div class="list" id="deny"></div>
+        <div class="toolbar">
+          <button class="btn" onclick="addDeny()" aria-label="添加排除"><svg class="i"><use href="#i-plus"/></svg>添加排除</button>
+          <label class="field spacer" style="max-width:220px"><span>每个订阅最多保留几条副 RSS</span><input class="input" type="number" id="maxStandby" min="0" max="20" placeholder="3" aria-label="每个订阅最多保留几条副 RSS"></label>
+        </div>
+      </section>
+
+      <section class="panel" id="p-offsets" aria-labelledby="h-offsets">
+        <div class="panel-head"><span class="idx">05</span><h2 id="h-offsets">季度与剧集偏移</h2></div>
+        <p class="lede">加番剧的常规做法：提前把 <code>bgm 链接</code> 贴进来，一般只规定<b>季度</b>；<b>集偏移得看是哪个组才写</b>，因为不同组的 RSS 起数不一样。命中该番剧的订阅都按这里的值写入，<b>实例里已有的订阅同样生效</b>。匹配先按 <code>bgmId</code>，再按标题包含匹配，写「冰之城墙」也能命中。留空表示不碰订阅里已有的值。</p>
+        <div class="row row-head target"><span>番剧标题 / bgm 链接</span><span>bgmId</span><span>季度</span><span>主 RSS 偏移</span><span>副 RSS 偏移</span><span>限定实例</span><span>新增启用</span><span></span></div>
+        <div class="list" id="targets"></div>
+        <div class="toolbar">
+          <button class="btn" onclick="addTarget()" aria-label="添加番剧"><svg class="i"><use href="#i-plus"/></svg>添加番剧</button>
+          <span class="note">例：季度 2、主副偏移 -12，用于第 2 季 RSS 从第 13 集接着数</span>
+        </div>
+        <details class="adv">
+          <summary><svg class="i caret"><use href="#i-caret"/></svg><span>全局兜底（番剧没命中上面任何一条时才用，一般留空）</span></summary>
+          <div class="adv-body">
+            <div class="grid-3">
+              <label class="field"><span>季度</span><input class="input" type="number" id="season" placeholder="留空 = 不改" aria-label="全局季度"></label>
+              <label class="field"><span>主 RSS 偏移（集）</span><input class="input" type="number" id="offset" placeholder="留空 = 不改" aria-label="全局主 RSS 偏移"></label>
+              <label class="field"><span>副 RSS 偏移（集）</span><input class="input" type="number" id="standbyOffset" placeholder="留空 = 不改" aria-label="全局副 RSS 偏移"></label>
+            </div>
+            <p class="note" style="margin-top:10px">写在全局会作用于所有订阅，只在确实要统一指定时才填。</p>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel" id="p-sync" aria-labelledby="h-sync">
+        <div class="panel-head"><span class="idx">06</span><h2 id="h-sync">同步与后台</h2></div>
+        <p class="lede">托盘常驻时按间隔自动爬取；预览模式只生成计划，不写入任何东西。</p>
+        <div class="grid-2">
+          <label class="field"><span>后台自动爬取间隔（分钟，0 = 不自动）</span><input class="input" type="number" id="intervalMinutes" min="0" max="10080" placeholder="0" aria-label="后台自动爬取间隔分钟"></label>
+          <label class="field"><span>本地设置页监听地址</span><input class="input mono" id="listen" placeholder="127.0.0.1:51837" aria-label="本地设置页监听地址"></label>
+        </div>
+        <div class="toolbar">
+          <label class="switch"><input type="checkbox" id="preview" aria-label="预览模式"><span>预览模式（生成计划但不写入）</span></label>
+          <label class="switch"><input type="checkbox" id="addMissing" aria-label="自动新增实例里没有的订阅"><span>自动新增实例里没有的订阅</span></label>
+          <span class="note">新增默认不启用，避免一上来就触发下载</span>
+        </div>
+      </section>
+
+      <section class="panel" id="p-discover" aria-labelledby="h-discover">
+        <div class="panel-head"><span class="idx">07</span><h2 id="h-discover">自动发现</h2></div>
+        <p class="lede">不用打开 ANI-RSS 的 WebUI 加订阅：先扫一遍现在有什么番剧在放，把实例里还没有的补进去。发现出来的条目不写季度与偏移，交给 ANI-RSS 按每个 RSS 的实际集数自己推断。</p>
+        <div class="toolbar" style="margin-top:0">
+          <label class="switch"><input type="checkbox" id="discoverEnabled" aria-label="打开自动发现"><span>打开自动发现</span></label>
+          <label class="switch"><input type="checkbox" id="discoverEnable" aria-label="发现出来的新订阅直接启用"><span>新订阅直接启用</span></label>
+          <span class="note">不勾选 = 只建订阅不下载，确认后再打开</span>
+        </div>
+        <div class="toolbar" id="discoverSources" role="group" aria-label="发现来源"></div>
+        <div class="grid-3">
+          <label class="field"><span>Bangumi 用户名（扫追番时填）</span><input class="input" id="discoverBgmUser" placeholder="留空 = 不用" aria-label="Bangumi 用户名"></label>
+          <label class="field"><span>时间窗口（天，默认 180）</span><input class="input" type="number" id="discoverDays" min="1" max="3650" placeholder="180" aria-label="自动发现的时间窗口天数"></label>
+          <label class="field"><span>单次新增上限（默认 50）</span><input class="input" type="number" id="discoverLimit" min="1" max="500" placeholder="50" aria-label="自动发现单次新增上限"></label>
+        </div>
+        <label class="field" style="margin-top:var(--sp-3)"><span>标题黑名单：一行一条正则，命中就不发现</span><textarea class="input mono" id="discoverExclude" rows="3" placeholder="合集&#10;(?i)国漫|国创" aria-label="自动发现标题黑名单"></textarea></label>
+        <p class="note" style="margin-top:10px">想先看效果，到下面的「执行」点「预览计划」，或命令行跑 <code>AniSync discover</code>（只读，不碰实例）。</p>
+      </section>
+
+      <section class="panel" id="p-run" aria-labelledby="h-run">
+        <div class="panel-head"><span class="idx">08</span><h2 id="h-run">执行</h2></div>
+        <p class="lede">预览计划是只读的，随时可以点。执行同步才会把差异写回实例。</p>
+        <div class="toolbar" style="margin-top:0">
+          <button class="btn" id="planBtn" onclick="plan()" aria-label="预览计划"><svg class="i"><use href="#i-eye"/></svg><span>预览计划</span></button>
+          <button class="btn primary" id="syncBtn" onclick="sync()" aria-label="执行同步"><svg class="i"><use href="#i-play"/></svg><span>执行同步</span></button>
+        </div>
+        <div id="planOut" style="margin-top:var(--sp-4)" aria-busy="false"></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="false"></div>
 
 <script>
 let cfg = null;
 let sources = [];
+// 自动发现的来源。id 必须与 internal/config 里的 DiscoverSourceNames 一致，
+// 有 TestWebUIListsEveryDiscoverSource 盯着，改了一边不改另一边测试会红。
+const discoverSources = [
+  { id: 'animegarden', name: 'AnimeGarden 主题', note: '只列出真的有字幕组在做的番剧，最省事' },
+  { id: 'bangumi-calendar', name: 'Bangumi 放送表', note: '当季新番全集，会把没人做的番剧也带出来' },
+  { id: 'bangumi-collections', name: 'Bangumi 追番', note: '扫某个用户的「在看」，需要填用户名' },
+];
+let activeNav = null;
+let dirty = false;
+let busy = false;
 
-async function api(path, options) {
-  const res = await fetch(path, options);
-  return await res.json();
+const $ = (id) => document.getElementById(id);
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
+function api(path, options) { return fetch(path, options).then((r) => r.json()); }
+
+/* ---------- 状态：顶栏文字 + 侧栏保存状态 + toast ---------- */
 function setStatus(text, kind) {
-  const el = document.getElementById('status');
+  const el = $('status');
   el.textContent = text || '';
   el.className = 'status ' + (kind || '');
 }
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function setSaveState(text, kind) {
+  $('saveState').textContent = text;
+  $('saveDot').className = 'dot ' + (kind || '');
+}
+function markDirty() {
+  if (dirty) return;
+  dirty = true;
+  setSaveState('有未保存的改动', 'dirty');
+}
+function markClean(text) {
+  dirty = false;
+  setSaveState(text || '已保存', 'ok');
+}
+function toast(text, kind) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || 'ok');
+  el.innerHTML = `<svg class="i"><use href="#${kind === 'err' ? 'i-alert' : 'i-check'}"/></svg><span>${esc(text)}</span>`;
+  /* 出场动画由 CSS 的 toast-out 负责，这里只负责收尸。 */
+  el.addEventListener('animationend', (e) => { if (e.animationName === 'toast-out') el.remove(); });
+  $('toastWrap').appendChild(el);
+}
 
+/* ---------- 忙碌态：按钮转圈 + 结果区骨架 ---------- */
+function setBusy(on, which, label) {
+  busy = on;
+  const btn = which === 'sync' ? $('syncBtn') : $('planBtn');
+  const other = which === 'sync' ? $('planBtn') : $('syncBtn');
+  [btn, other, $('saveBtn')].forEach((b) => { if (b) b.disabled = on; });
+  if (!btn) return;
+  if (on) {
+    btn.dataset.html = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span><span>${esc(label)}</span>`;
+  } else if (btn.dataset.html) {
+    btn.innerHTML = btn.dataset.html;
+  }
+}
+function planSkeleton() {
+  const widths = [78, 62, 88, 70];
+  $('planOut').innerHTML = '<div class="sk-rows">' +
+    widths.map((w) => `<div style="display:flex;gap:12px;align-items:center"><span class="sk" style="width:64px"></span><span class="sk" style="width:${w}%"></span></div>`).join('') +
+    '</div>';
+}
+function planEmpty() {
+  $('planOut').innerHTML =
+    '<div class="empty"><svg><use href="#i-empty"/></svg>' +
+    '<p>还没有计划</p>' +
+    '<p class="note">点「预览计划」会按规则爬取站点并列出将要写入的差异，不会改动实例。</p>' +
+    '<button class="btn" onclick="plan()" style="margin-top:6px" aria-label="预览计划"><svg class="i"><use href="#i-eye"/></svg>预览计划</button></div>';
+}
+
+/* ---------- 导航：滑动指示条 + 滚动联动 ---------- */
+function moveIndicator(item) {
+  const bar = $('navIndicator');
+  if (!bar || window.matchMedia('(max-width: 900px)').matches) return;
+  bar.style.transform = `translateY(${item.offsetTop + (item.offsetHeight - bar.offsetHeight) / 2}px)`;
+}
+function setActive(id) {
+  const item = document.querySelector(`.nav-item[data-target="${id}"]`);
+  if (!item || item === activeNav) return;
+  activeNav = item;
+  document.querySelectorAll('.nav-item').forEach((a) => a.removeAttribute('aria-current'));
+  item.setAttribute('aria-current', 'true');
+  moveIndicator(item);
+  $('pageTitle').textContent = item.dataset.title || '';
+}
+function initNav() {
+  const panels = [...document.querySelectorAll('.content .panel')];
+  /* 点侧边栏跳转时钉住被点的那一节，直到平滑滚动停下为止。
+     「两节同屏」时几何扫描只能二选一，不钉住就会出现「点了执行、高亮却是自动发现」。
+     钉住的时长不能用固定值：从页顶滑到页底要一秒多，固定值会在半路失效。 */
+  let pinTarget = null;
+  let pinTimer = 0;
+  const releasePinSoon = () => {
+    clearTimeout(pinTimer);
+    pinTimer = setTimeout(() => { pinTarget = null; }, 150);
+  };
+  window.addEventListener('scroll', () => { if (pinTarget) releasePinSoon(); }, { passive: true });
+  $('nav').addEventListener('click', (e) => {
+    const item = e.target.closest('.nav-item');
+    if (!item) return;
+    pinTarget = item.dataset.target;
+    setActive(pinTarget);
+    /* 兜底：点了本来就露在视口里的节不会触发 scroll，1.2s 后强制解除 */
+    clearTimeout(pinTimer);
+    pinTimer = setTimeout(() => { pinTarget = null; }, 1200);
+  });
+  /* 参考线取顶栏下方一点：取「最后一个顶边已经越过参考线的面板」。
+     用几何判断而不是 intersection 集合，超长面板（比如 75 行的计划表）滚到中段时高亮才不会掉回上一节。 */
+  const sync = () => {
+    if (pinTarget) return;
+    /* 页面短到根本滚不动时，所有节都露在视口里，几何扫描只会认到第一节，
+       这时认最后一节更符合「我在看底部」的直觉。 */
+    if (document.documentElement.scrollHeight <= window.innerHeight + 2) {
+      setActive(panels[panels.length - 1].id);
+      return;
+    }
+    /* 其余情况一律按几何算，不额外「到底就认最后一节」：
+       那样会让倒数第二节永远高亮不到 —— 它的顶边被最后一节挤得够不到参考线，
+       连点侧边栏跳过去都会被判成最后一节。 */
+    const line = window.scrollY + 96;
+    let current = panels[0];
+    panels.forEach((p) => { if (p.offsetTop <= line) current = p; });
+    setActive(current.id);
+  };
+  const obs = new IntersectionObserver(sync, { rootMargin: '-96px 0px -85% 0px', threshold: 0 });
+  panels.forEach((p) => obs.observe(p));
+  window.addEventListener('resize', () => { if (activeNav) moveIndicator(activeNav); });
+  requestAnimationFrame(() => { sync(); if (activeNav) moveIndicator(activeNav); });
+}
+
+/* ---------- 列表增删：进出场都交给 CSS 动画，用 animationend 收尾 ---------- */
+function onAnimationEnd(el, name, fn) {
+  el.addEventListener('animationend', (e) => { if (e.target === el && e.animationName === name) fn(); });
+}
+function revealRow(listId, index) {
+  const row = $(listId).children[index];
+  if (!row) return;
+  row.classList.add('enter');
+  onAnimationEnd(row, 'row-in', () => row.classList.remove('enter'));
+  const first = row.querySelector('input, select');
+  if (first) first.focus();
+}
+function removeRow(listId, index, commit) {
+  const row = $(listId).children[index];
+  if (!row) { commit(); render(); return; }
+  onAnimationEnd(row, 'row-out', () => { commit(); render(); });
+  row.classList.add('leave');
+}
+
+/* ---------- 渲染 ---------- */
 async function load() {
   const [data, src] = await Promise.all([api('/api/config'), api('/api/sources')]);
   cfg = data.config;
@@ -151,172 +596,374 @@ async function load() {
   cfg.rules.deny = cfg.rules.deny || [];
   cfg.sources = cfg.sources || {};
   cfg.sync = cfg.sync || {};
-  document.getElementById('cfgPath').textContent = data.path;
+  cfg.targets = cfg.targets || [];
+  cfg.instances = cfg.instances || [];
+  const p = $('cfgPath');
+  p.textContent = data.path || '';
+  p.title = data.path || '';
   render();
+  planEmpty();
+  initNav();
+  markClean('已加载配置');
 }
 
 function render() {
-  const box = document.getElementById('instances');
+  const box = $('instances');
   box.innerHTML = '';
   (cfg.instances || []).forEach((inst, i) => {
     const row = document.createElement('div');
     row.className = 'row inst';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', `实例 ${i + 1}`);
     row.innerHTML = `
-      <input value="${esc(inst.name || '')}" placeholder="名字" oninput="cfg.instances[${i}].name=this.value">
-      <input value="${esc(inst.baseUrl || '')}" placeholder="https://ass.example.com/" oninput="cfg.instances[${i}].baseUrl=this.value">
-      <input value="${esc(inst.apiKey || '')}" placeholder="API Key 或 \${ENV_NAME}" oninput="cfg.instances[${i}].apiKey=this.value">
-      <button onclick="testInstance(${i})">测试</button>
-      <button class="danger" onclick="delInstance(${i})">删除</button>`;
+      <input class="input" aria-label="实例名" value="${esc(inst.name || '')}" placeholder="主库" oninput="cfg.instances[${i}].name=this.value">
+      <input class="input mono" aria-label="实例地址" value="${esc(inst.baseUrl || '')}" placeholder="https://ass.example.com/" oninput="cfg.instances[${i}].baseUrl=this.value">
+      <input class="input mono" aria-label="实例 API Key" value="${esc(inst.apiKey || '')}" placeholder="API Key 或 \${ENV_NAME}" oninput="cfg.instances[${i}].apiKey=this.value">
+      <button class="btn" onclick="testInstance(${i})" aria-label="测试实例 ${esc(inst.name || i + 1)} 的连通性"><svg class="i"><use href="#i-plug"/></svg>测试</button>
+      <button class="btn icon danger" onclick="delInstance(${i})" aria-label="删除实例 ${esc(inst.name || i + 1)}"><svg class="i"><use href="#i-trash"/></svg></button>`;
     box.appendChild(row);
   });
-  if (!(cfg.instances || []).length) box.innerHTML = '<p class="hint">还没有实例，点下面的按钮添加。</p>';
+  if (!cfg.instances.length) {
+    box.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>还没有实例</p><p class="note">填一个 ANI-RSS 地址与 API Key，才能拉订阅、写回打点结果。</p></div>';
+  }
+  $('nInstances').textContent = cfg.instances.length;
 
-  const picker = document.getElementById('siteInstance');
+  const picker = $('siteInstance');
   picker.innerHTML = '<option value="">（第一个启用的实例）</option>' +
-    (cfg.instances || []).map((it) => `<option value="${esc(it.name)}" ${cfg.sources.instance === it.name ? 'selected' : ''}>${esc(it.name || it.baseUrl)}</option>`).join('');
+    cfg.instances.map((it) => `<option value="${esc(it.name)}" ${cfg.sources.instance === it.name ? 'selected' : ''}>${esc(it.name || it.baseUrl)}</option>`).join('');
 
-  const order = document.getElementById('sourceOrder');
+  const order = $('sourceOrder');
   order.innerHTML = '';
   sources.forEach((src) => {
-    const on = (cfg.sources.order || []).includes(src.id);
-    const chip = document.createElement('span');
-    chip.className = 'chip' + (on ? ' on' : '');
-    chip.textContent = (on ? (cfg.sources.order.indexOf(src.id) + 1) + '. ' : '') + src.name;
+    const at = (cfg.sources.order || []).indexOf(src.id);
+    const on = at >= 0;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.setAttribute('aria-pressed', String(on));
+    chip.setAttribute('aria-label', `${src.name}：${on ? '已启用，优先级 ' + (at + 1) : '未启用'}`);
     chip.title = src.note + '（点击切换启用）';
+    chip.innerHTML = (on ? `<span class="ord">${at + 1}</span>` : '') + `<span>${esc(src.name)}</span>`;
     chip.onclick = () => toggleSource(src.id);
     order.appendChild(chip);
   });
-  document.getElementById('stopOnFirst').checked = !!cfg.sources.stopOnFirstMatch;
-  document.getElementById('timeout').value = cfg.sources.timeoutSeconds || 25;
-  document.getElementById('cacheMinutes').value = cfg.sources.cacheMinutes ?? 720;
-  document.getElementById('maxStandby').value = cfg.rules.maxStandby || 3;
-  document.getElementById('addMissing').checked = !!cfg.sync.addMissing;
-  document.getElementById('preview').checked = !!cfg.sync.preview;
-  document.getElementById('intervalMinutes').value = cfg.sync.intervalMinutes || 0;
-  document.getElementById('listen').value = cfg.listen || '127.0.0.1:51837';
+  $('stopOnFirst').checked = !!cfg.sources.stopOnFirstMatch;
+  $('timeout').value = cfg.sources.timeoutSeconds || 25;
+  $('cacheMinutes').value = cfg.sources.cacheMinutes ?? 720;
+  $('maxStandby').value = cfg.rules.maxStandby || 3;
+  $('addMissing').checked = !!cfg.sync.addMissing;
+  $('preview').checked = !!cfg.sync.preview;
+  $('intervalMinutes').value = cfg.sync.intervalMinutes || 0;
+  $('listen').value = cfg.listen || '127.0.0.1:51837';
+  $('season').value = cfg.sync.season ?? '';
+  $('offset').value = cfg.sync.offset ?? '';
+  $('standbyOffset').value = cfg.sync.standbyOffset ?? '';
 
-  const rules = document.getElementById('rules');
+  // 白名单 / 黑名单可以放在外置文件里（rules.primaryFiles / denyFiles），
+  // 那些规则不在这张表里，得明确告诉用户，否则他会以为规则丢了。
+  const ruleFiles = cfg.fileRules || [];
+  $('ruleFiles').textContent = ruleFiles.length
+    ? '另有 ' + ruleFiles.map((f) => `${f.count} 条来自 ${String(f.path).split(/[\\/]/).pop()}`).join('、') + '，在文件里改'
+    : '';
+
+  const disc = cfg.discover || {};
+  $('discoverEnabled').checked = !!disc.enabled;
+  $('discoverEnable').checked = !!disc.enable;
+  $('discoverBgmUser').value = disc.bgmUser || '';
+  $('discoverDays').value = disc.days || 180;
+  $('discoverLimit').value = disc.limit || 50;
+  $('discoverExclude').value = (disc.exclude || []).join('\n');
+  $('nDiscover').textContent = disc.enabled ? '开' : '关';
+  const discBox = $('discoverSources');
+  discBox.innerHTML = '';
+  const activeDisc = disc.sources || [];
+  discoverSources.forEach((src) => {
+    const on = activeDisc.indexOf(src.id) >= 0;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.setAttribute('aria-pressed', String(on));
+    chip.setAttribute('aria-label', `${src.name}：${on ? '已启用' : '未启用'}`);
+    chip.title = src.note + '（点击切换启用）';
+    chip.innerHTML = `<span>${esc(src.name)}</span>`;
+    chip.onclick = () => {
+      const list = cfg.discover.sources || (cfg.discover.sources = []);
+      const at = list.indexOf(src.id);
+      if (at >= 0) { list.splice(at, 1); } else { list.push(src.id); }
+      markDirty();
+      render();
+    };
+    discBox.appendChild(chip);
+  });
+
+  const rules = $('rules');
   rules.innerHTML = '';
-  (cfg.rules.primary || []).forEach((rule, i) => {
+  cfg.rules.primary.forEach((rule, i) => {
     const row = document.createElement('div');
     row.className = 'row rule';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', `规则 ${i + 1}`);
     row.innerHTML = `
-      <input value="${esc(rule.name || '')}" placeholder="名字" oninput="cfg.rules.primary[${i}].name=this.value">
-      <input value="${esc(rule.match || '')}" placeholder="正则，例如 简日|CHS" oninput="cfg.rules.primary[${i}].match=this.value">
-      <input type="number" value="${rule.priority ?? 10}" oninput="cfg.rules.primary[${i}].priority=Number(this.value)">
-      <select onchange="cfg.rules.primary[${i}].scope=this.value">
+      <input class="input" aria-label="规则名称" value="${esc(rule.name || '')}" placeholder="简日内嵌" oninput="cfg.rules.primary[${i}].name=this.value">
+      <input class="input mono" aria-label="规则正则" value="${esc(rule.match || '')}" placeholder="(?i)简日|CHS" oninput="cfg.rules.primary[${i}].match=this.value">
+      <input class="input" type="number" aria-label="规则优先级" value="${rule.priority ?? 10}" placeholder="10" oninput="cfg.rules.primary[${i}].priority=Number(this.value)">
+      <select class="input" aria-label="规则作用域" onchange="cfg.rules.primary[${i}].scope=this.value">
         <option value="main" ${(rule.scope || 'main') === 'main' ? 'selected' : ''}>主 RSS</option>
         <option value="standby" ${rule.scope === 'standby' ? 'selected' : ''}>副 RSS</option>
         <option value="both" ${rule.scope === 'both' ? 'selected' : ''}>两者</option>
       </select>
-      <select onchange="cfg.rules.primary[${i}].site=this.value">
+      <select class="input" aria-label="规则限定站点" onchange="cfg.rules.primary[${i}].site=this.value">
         <option value="">不限站点</option>
-        ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+        ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
       </select>
-      <button class="danger" onclick="delRule(${i})">删除</button>`;
+      <button class="btn icon danger" onclick="delRule(${i})" aria-label="删除规则 ${esc(rule.name || i + 1)}"><svg class="i"><use href="#i-trash"/></svg></button>`;
     rules.appendChild(row);
   });
-  if (!(cfg.rules.primary || []).length) rules.innerHTML = '<p class="hint">没有规则时，所有候选按站点顺序与热度排序，第一个当主 RSS。</p>';
+  if (!cfg.rules.primary.length) {
+    rules.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>还没有规则</p><p class="note">没有规则时所有候选按站点顺序与热度排序，第一个当主 RSS。</p></div>';
+  }
+  $('nRules').textContent = cfg.rules.primary.length;
 
-  const deny = document.getElementById('deny');
+  const deny = $('deny');
   deny.innerHTML = '';
-  (cfg.rules.deny || []).forEach((rule, i) => {
+  cfg.rules.deny.forEach((rule, i) => {
     const row = document.createElement('div');
     row.className = 'row deny';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', `排除规则 ${i + 1}`);
     row.innerHTML = `
-      <input value="${esc(rule.match || '')}" placeholder="正则，例如 合集|BDRip" oninput="cfg.rules.deny[${i}].match=this.value">
-      <input value="${esc(rule.why || '')}" placeholder="备注" oninput="cfg.rules.deny[${i}].why=this.value">
-      <button class="danger" onclick="delDeny(${i})">删除</button>`;
+      <input class="input mono" aria-label="排除正则" value="${esc(rule.match || '')}" placeholder="合集|BDRip" oninput="cfg.rules.deny[${i}].match=this.value">
+      <input class="input" aria-label="排除备注" value="${esc(rule.why || '')}" placeholder="不要合集" oninput="cfg.rules.deny[${i}].why=this.value">
+      <button class="btn icon danger" onclick="delDeny(${i})" aria-label="删除排除规则 ${i + 1}"><svg class="i"><use href="#i-trash"/></svg></button>`;
     deny.appendChild(row);
   });
+  if (!cfg.rules.deny.length) {
+    deny.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>没有排除规则</p><p class="note">想挡合集、BDRip 时再加。</p></div>';
+  }
+  $('nDeny').textContent = cfg.rules.deny.length;
+
+  const targets = $('targets');
+  targets.innerHTML = '';
+  cfg.targets.forEach((tg, i) => {
+    const row = document.createElement('div');
+    row.className = 'row target';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', `番剧配置 ${i + 1}`);
+    row.innerHTML = `
+      <input class="input" aria-label="番剧标题或 bgm 链接" value="${esc(tg.title || '')}" placeholder="冰之城墙 或 bgm 链接" oninput="cfg.targets[${i}].title=this.value">
+      <input class="input mono" aria-label="番剧 bgmId" value="${esc(tg.bgmId || '')}" placeholder="665390 或链接" oninput="cfg.targets[${i}].bgmId=this.value">
+      <input class="input" type="number" aria-label="季度" value="${tg.season ?? ''}" placeholder="留空" oninput="cfg.targets[${i}].season=numOrUndef(this.value)">
+      <input class="input" type="number" aria-label="主 RSS 集偏移" value="${tg.offset ?? ''}" placeholder="留空" oninput="cfg.targets[${i}].offset=numOrUndef(this.value)">
+      <input class="input" type="number" aria-label="副 RSS 集偏移" value="${tg.standbyOffset ?? ''}" placeholder="留空" oninput="cfg.targets[${i}].standbyOffset=numOrUndef(this.value)">
+      <input class="input" aria-label="限定实例，逗号分隔" value="${esc((tg.instances || []).join(','))}" placeholder="不限实例" oninput="cfg.targets[${i}].instances=splitList(this.value)">
+      <label class="switch" style="justify-content:center"><input type="checkbox" aria-label="新增时启用该订阅" ${tg.enable ? 'checked' : ''} onchange="cfg.targets[${i}].enable=this.checked"></label>
+      <button class="btn icon danger" onclick="delTarget(${i})" aria-label="删除番剧配置 ${esc(tg.title || i + 1)}"><svg class="i"><use href="#i-trash"/></svg></button>`;
+    targets.appendChild(row);
+  });
+  if (!cfg.targets.length) {
+    targets.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>还没有番剧级配置</p><p class="note">留空时季度与偏移完全不动，交给 ANI-RSS 按每个 RSS 的集数自己推断。</p></div>';
+  }
+  $('nTargets').textContent = cfg.targets.length;
 }
 
+/* ---------- 增删 ---------- */
 function toggleSource(id) {
   const list = cfg.sources.order || (cfg.sources.order = []);
   const at = list.indexOf(id);
   if (at >= 0) list.splice(at, 1); else list.push(id);
+  markDirty();
   render();
 }
-function addInstance() { (cfg.instances = cfg.instances || []).push({ name: '', baseUrl: '', apiKey: '', enabled: true }); render(); }
-function delInstance(i) { cfg.instances.splice(i, 1); render(); }
-function addRule() { cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', site: '' }); render(); }
+function addInstance() {
+  cfg.instances.push({ name: '', baseUrl: '', apiKey: '', enabled: true });
+  render(); revealRow('instances', cfg.instances.length - 1); markDirty();
+}
+function delInstance(i) { markDirty(); removeRow('instances', i, () => cfg.instances.splice(i, 1)); }
+function addRule() {
+  cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', site: '' });
+  render(); revealRow('rules', cfg.rules.primary.length - 1); markDirty();
+}
 function addTypeRules() {
   cfg.rules.primary.push(
     { name: '简日内嵌', match: '(?i)简日|简体|CHS', priority: 10, scope: 'main', site: '' },
     { name: '繁日内嵌', match: '(?i)繁日|繁體|CHT', priority: 20, scope: 'main', site: '' },
     { name: '简繁日内封', match: '(?i)简繁|内封', priority: 30, scope: 'main', site: '' });
-  render();
+  render(); markDirty();
 }
-function delRule(i) { cfg.rules.primary.splice(i, 1); render(); }
-function addDeny() { cfg.rules.deny.push({ match: '', why: '' }); render(); }
-function delDeny(i) { cfg.rules.deny.splice(i, 1); render(); }
+function delRule(i) { markDirty(); removeRow('rules', i, () => cfg.rules.primary.splice(i, 1)); }
+function addDeny() {
+  cfg.rules.deny.push({ match: '', why: '' });
+  render(); revealRow('deny', cfg.rules.deny.length - 1); markDirty();
+}
+function delDeny(i) { markDirty(); removeRow('deny', i, () => cfg.rules.deny.splice(i, 1)); }
+function addTarget() {
+  cfg.targets.push({ title: '', bgmId: '' });
+  render(); revealRow('targets', cfg.targets.length - 1); markDirty();
+}
+function delTarget(i) { markDirty(); removeRow('targets', i, () => cfg.targets.splice(i, 1)); }
+
+/* 空输入 = 配置里不写这一项 = AniSync 不碰订阅里已有的值。
+   返回 undefined，JSON.stringify 会直接丢掉这个键。 */
+function numOrUndef(raw) {
+  const text = String(raw).trim();
+  if (text === '') return undefined;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : undefined;
+}
+function optInt(id) { return numOrUndef($(id).value); }
+function splitList(raw) {
+  const list = String(raw).split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : undefined;
+}
+function isEmptyTarget(tg) {
+  return !tg.title && !tg.bgmId && tg.season === undefined && tg.offset === undefined &&
+    tg.standbyOffset === undefined && !(tg.instances || []).length;
+}
 
 function collect() {
-  cfg.sources.instance = document.getElementById('siteInstance').value;
-  cfg.sources.stopOnFirstMatch = document.getElementById('stopOnFirst').checked;
-  cfg.sources.timeoutSeconds = Number(document.getElementById('timeout').value) || 25;
-  cfg.sources.cacheMinutes = Number(document.getElementById('cacheMinutes').value) || 0;
-  cfg.rules.maxStandby = Number(document.getElementById('maxStandby').value) || 3;
-  cfg.sync.addMissing = document.getElementById('addMissing').checked;
-  cfg.sync.preview = document.getElementById('preview').checked;
-  cfg.sync.intervalMinutes = Number(document.getElementById('intervalMinutes').value) || 0;
-  cfg.listen = document.getElementById('listen').value || '127.0.0.1:51837';
+  cfg.sources.instance = $('siteInstance').value;
+  cfg.sources.stopOnFirstMatch = $('stopOnFirst').checked;
+  cfg.sources.timeoutSeconds = Number($('timeout').value) || 25;
+  cfg.sources.cacheMinutes = Number($('cacheMinutes').value) || 0;
+  cfg.rules.maxStandby = Number($('maxStandby').value) || 3;
+  cfg.sync.addMissing = $('addMissing').checked;
+  cfg.sync.preview = $('preview').checked;
+  cfg.sync.intervalMinutes = Number($('intervalMinutes').value) || 0;
+  cfg.sync.season = optInt('season');
+  cfg.sync.offset = optInt('offset');
+  cfg.sync.standbyOffset = optInt('standbyOffset');
+  cfg.targets = (cfg.targets || []).filter((tg) => !isEmptyTarget(tg));
+  cfg.discover = cfg.discover || {};
+  cfg.discover.enabled = $('discoverEnabled').checked;
+  cfg.discover.enable = $('discoverEnable').checked;
+  cfg.discover.bgmUser = $('discoverBgmUser').value.trim();
+  cfg.discover.days = Number($('discoverDays').value) || 180;
+  cfg.discover.limit = Number($('discoverLimit').value) || 50;
+  cfg.discover.exclude = $('discoverExclude').value.split('\n').map((line) => line.trim()).filter(Boolean);
+  // 来源靠上面的标签切换直接改 cfg，这里只在一条都没选时兜底，
+  // 避免保存出一份「打开了自动发现但没有任何来源」的配置。
+  if (!(cfg.discover.sources || []).length) { cfg.discover.sources = ['animegarden']; }
+  cfg.listen = $('listen').value || '127.0.0.1:51837';
   return cfg;
 }
 
+/* ---------- 动作 ---------- */
 async function save() {
-  setStatus('保存中…');
-  const res = await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect()) });
-  if (res.error) return setStatus(res.error, 'err');
-  setStatus('已保存到 ' + res.path, 'ok');
+  const btn = $('saveBtn');
+  btn.disabled = true;
+  setStatus('保存中');
+  try {
+    const res = await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect()) });
+    if (res.error) { setStatus(res.error, 'err'); setSaveState('保存失败', 'err'); toast(res.error, 'err'); return false; }
+    render();
+    markClean('已保存');
+    setStatus('');
+    toast('配置已保存');
+    return true;
+  } finally {
+    btn.disabled = busy;
+  }
 }
 
 async function testInstance(i) {
   const inst = collect().instances[i];
-  setStatus('测试 ' + (inst.name || inst.baseUrl) + ' …');
+  const name = inst.name || inst.baseUrl;
+  setStatus('测试 ' + name + ' 中');
   const res = await api('/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inst) });
-  if (!res.ok) return setStatus(res.error, 'err');
-  setStatus(`连接成功：v${res.version}，订阅 ${res.total} 条`, 'ok');
+  if (!res.ok) { setStatus(res.error, 'err'); toast(name + '：' + res.error, 'err'); return; }
+  setStatus('连接成功');
+  toast(`${name} 连接成功，订阅 ${res.total} 条`);
 }
 
 async function plan() {
-  const saved = await save();
-  setStatus('正在爬取站点并生成计划…');
-  document.getElementById('planOut').innerHTML = '<p class="hint">爬取中，站点多/番剧多时需要一会儿…</p>';
-  const res = await api('/api/plan', { method: 'POST' });
-  if (res.error) { document.getElementById('planOut').innerHTML = ''; return setStatus(res.error, 'err'); }
-  renderPlan(res);
-  setStatus('计划已生成（站点数据取自 ' + (res.siteInstance || '未知') + '）', 'ok');
+  if (busy) return;
+  if (!(await save())) return;
+  setBusy(true, 'plan', '爬取中');
+  setStatus('正在爬取站点并生成计划');
+  planSkeleton();
+  try {
+    const res = await api('/api/plan', { method: 'POST' });
+    if (res.error) { setStatus(res.error, 'err'); planEmpty(); toast(res.error, 'err'); return; }
+    renderPlan(res);
+    setStatus('计划已生成，站点数据取自 ' + (res.siteInstance || '未知'), 'ok');
+  } catch (e) {
+    setStatus(String(e), 'err');
+    planEmpty();
+  } finally {
+    setBusy(false, 'plan');
+    $('planOut').setAttribute('aria-busy', 'false');
+  }
 }
 
 async function sync() {
+  if (busy) return;
   await save();
-  if (cfg.sync.preview) return setStatus('当前是预览模式，请先取消勾选再执行同步', 'err');
-  setStatus('正在同步…');
-  const res = await api('/api/sync', { method: 'POST' });
-  if (res.error) return setStatus(res.error, 'err');
-  renderPlan(res.plan);
-  setStatus(`更新 ${res.updated} 条，新增 ${res.added} 条，失败 ${(res.errors || []).length} 条`, res.errors && res.errors.length ? 'err' : 'ok');
+  if (cfg.sync.preview) { setStatus('当前是预览模式，先取消勾选再执行同步', 'err'); toast('预览模式下不会写入', 'err'); return; }
+  setBusy(true, 'sync', '同步中');
+  setStatus('正在同步');
+  planSkeleton();
+  try {
+    const res = await api('/api/sync', { method: 'POST' });
+    if (res.error) { setStatus(res.error, 'err'); planEmpty(); toast(res.error, 'err'); return; }
+    renderPlan(res.plan);
+    const failed = (res.errors || []).length;
+    setStatus(`更新 ${res.updated} 条，新增 ${res.added} 条，失败 ${failed} 条`, failed ? 'err' : 'ok');
+    toast(`同步完成：更新 ${res.updated}，新增 ${res.added}${failed ? '，失败 ' + failed : ''}`, failed ? 'err' : 'ok');
+  } catch (e) {
+    setStatus(String(e), 'err');
+    planEmpty();
+  } finally {
+    setBusy(false, 'sync');
+  }
 }
 
 function renderPlan(plan) {
-  const rows = [];
-  for (const site of plan.sites || []) {
-    rows.push(`<tr><td>${esc(site.site)}</td><td colspan="3">${site.error ? '<span class="tag" style="color:var(--err)">' + esc(site.error) + '</span>' : site.candidates + ' 个候选'}</td></tr>`);
-  }
-  const head = `<table><thead><tr><th style="width:110px">实例</th><th style="width:70px">动作</th><th>订阅 / 变更</th></tr></thead><tbody>`;
-  const body = (plan.actions || []).filter((a) => a.kind !== 'noop').map((a) => {
-    const changes = (a.changes || []).map((c) => `<div><code>${c.field}</code> ${esc(c.from || '（空）')} <span style="color:var(--accent)">→</span> ${esc(c.to || '（空）')}</div>`).join('');
-    return `<tr><td>${esc(a.instance)}</td><td><span class="tag ${a.kind}">${a.kind === 'update' ? '更新' : a.kind === 'add' ? '新增' : a.kind}</span></td><td><strong>${esc(a.title)}</strong>${changes}</td></tr>`;
-  }).join('');
+  if (!plan) { planEmpty(); return; }
+  const actions = (plan.actions || []).filter((a) => a.kind !== 'noop');
   const noop = (plan.actions || []).filter((a) => a.kind === 'noop').length;
-  const skipped = (plan.skipped || []).map((s) => `<tr><td>${esc(s.instance)}</td><td><span class="tag">跳过</span></td><td>${esc(s.title)} — ${esc(s.reason)}</td></tr>`).join('');
-  document.getElementById('planOut').innerHTML =
-    head + rows.join('') + body + skipped + '</tbody></table>' +
-    `<p class="hint">无需变更 ${noop} 条，跳过 ${(plan.skipped || []).length} 条。</p>`;
+  const skipped = plan.skipped || [];
+  const updates = actions.filter((a) => a.kind === 'update').length;
+  const adds = actions.filter((a) => a.kind === 'add').length;
+
+  const sites = (plan.sites || []).map((s) =>
+    s.error
+      ? `<span class="site bad" title="${esc(s.error)}">${esc(s.site)} 失败</span>`
+      : `<span class="site">${esc(s.site)} <b>${s.candidates}</b></span>`).join('');
+
+  const summary =
+    '<div class="summary"><div class="stats">' +
+    `<div class="stat${updates ? ' hi' : ''}"><span class="k">更新</span><span class="v">${updates}</span></div>` +
+    `<div class="stat"><span class="k">新增</span><span class="v">${adds}</span></div>` +
+    `<div class="stat"><span class="k">无需变更</span><span class="v">${noop}</span></div>` +
+    `<div class="stat"><span class="k">跳过</span><span class="v">${skipped.length}</span></div>` +
+    `</div><div class="sites">${sites}</div></div>`;
+
+  if (!actions.length && !skipped.length) {
+    $('planOut').innerHTML = summary +
+      '<div class="empty"><svg><use href="#i-check"/></svg><p>主副 RSS 已符合规则</p><p class="note">没有需要写入的差异。</p></div>';
+    return;
+  }
+
+  const rows = actions.map((a) => {
+    const changes = (a.changes || []).map((c) =>
+      `<div class="diff"><span class="fld">${esc(c.field)}</span><span class="from">${esc(c.from || '（空）')}</span><span class="arw">→</span><span class="to">${esc(c.to || '（空）')}</span></div>`).join('');
+    const tag = a.target ? `<span class="tag target" title="按番剧规定的季度与集偏移">按番剧 ${esc(a.target)}</span> ` : '';
+    const kind = a.kind === 'update' ? '<span class="tag update">更新</span>' : a.kind === 'add' ? '<span class="tag add">新增</span>' : `<span class="tag">${esc(a.kind)}</span>`;
+    return `<tr><td>${esc(a.instance)}</td><td class="act">${kind}</td><td><div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><strong>${esc(a.title)}</strong>${tag}</div>${changes}</td></tr>`;
+  }).join('');
+
+  const skippedRows = skipped.map((s) =>
+    `<tr><td>${esc(s.instance)}</td><td class="act"><span class="tag skip">跳过</span></td><td><strong>${esc(s.title)}</strong><div class="diff"><span class="from">${esc(s.reason)}</span></div></td></tr>`).join('');
+
+  $('planOut').innerHTML = summary +
+    '<div class="table-wrap"><table><thead><tr><th style="width:104px">实例</th><th style="width:72px">动作</th><th>订阅与变更</th></tr></thead><tbody>' +
+    rows + skippedRows + '</tbody></table></div>';
 }
 
-load().catch((e) => setStatus(String(e), 'err'));
+/* ---------- 启动 ---------- */
+document.addEventListener('input', (e) => { if (e.target.closest('.content')) markDirty(); });
+document.addEventListener('change', (e) => { if (e.target.closest('.content')) markDirty(); });
+load().catch((e) => { setStatus(String(e), 'err'); setSaveState('加载失败', 'err'); });
 </script>
 </body>
 </html>

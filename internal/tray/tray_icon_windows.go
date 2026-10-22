@@ -50,13 +50,13 @@ func icoBytes() []byte {
 	}
 
 	var out bytes.Buffer
-	_ = binary.Write(&out, binary.LittleEndian, uint16(0)) // reserved
-	_ = binary.Write(&out, binary.LittleEndian, uint16(1)) // type: icon
-	_ = binary.Write(&out, binary.LittleEndian, uint16(1)) // count
-	out.WriteByte(size)                                    // width
-	out.WriteByte(size)                                    // height
-	out.WriteByte(0)                                       // palette
-	out.WriteByte(0)                                       // reserved
+	_ = binary.Write(&out, binary.LittleEndian, uint16(0))  // reserved
+	_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // type: icon
+	_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // count
+	out.WriteByte(size)                                     // width
+	out.WriteByte(size)                                     // height
+	out.WriteByte(0)                                        // palette
+	out.WriteByte(0)                                        // reserved
 	_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // planes
 	_ = binary.Write(&out, binary.LittleEndian, uint16(32)) // bpp
 	_ = binary.Write(&out, binary.LittleEndian, uint32(len(image)))

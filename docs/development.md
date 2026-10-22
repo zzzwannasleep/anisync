@@ -10,10 +10,12 @@ go build ./...
 
 ## 测试
 
-单元测试集中在两处：
+单元测试集中在四处：
 
 - `internal/rules`：规则编译、主/副 RSS 排序、去重、`scope` 语义
 - `internal/source`：关键词清洗、Nyaa 搜索地址拼接、mikan 番剧页推导、站点到 `Ani.type` 的映射、缓存裁剪
+- `internal/planner`：备用 RSS 的偏移继承、偏移变化的差异识别、季度/偏移的取值优先级、番剧级配置的匹配（bgmId / 标题包含 / 限定实例）
+- `internal/config`：番剧级配置的校验与规整
 
 涉及网络的适配器不做单元测试，改用 `probe` 打真实站点验证：
 
@@ -24,6 +26,16 @@ AniSync probe --site nyaa   --jp "White Cat Legend S03"
 ```
 
 `probe` 输出每个候选的字幕组名、热度与标题样本数，用来判断「为什么这个番剧没匹配到」。
+
+## 设置页（WebUI）
+
+`internal/webui/assets/index.html` 是单文件内嵌资源，没有前端构建步骤：改完 `go build` 即生效。样式与脚本都写在这一个文件里，改完跑一遍静态检查，避免把「AI 味」的样式写回去：
+
+```bash
+npx ui-craft-detect internal/webui/assets/index.html
+```
+
+判定口径是 0 error / 0 warning：占位符不能当 label、`:hover` 必须配 `:focus-visible`、表格要有横向溢出与 sticky 表头、可见文案里的破折号不超过两条、字号层级不超过 6 档。
 
 ## 改动站点适配的注意事项
 

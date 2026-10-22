@@ -28,7 +28,7 @@ func cmdProbe(args []string) int {
 	}
 	timeout := time.Duration(cfg.Sources.TimeoutSeconds) * time.Second
 
-	httpClient, err := newProbeClient(cfg.Proxy, timeout)
+	httpClient, err := newProbeClient(cfg.ResolvedProxy(), timeout)
 	if err != nil {
 		return fail(err)
 	}
@@ -39,7 +39,8 @@ func cmdProbe(args []string) int {
 		if !ok {
 			return fail(fmt.Errorf("找不到站点数据来源实例 %s", name))
 		}
-		siteClient, err = assapi.New(instance.BaseURL, instance.APIKey, cfg.Proxy, timeout)
+		resolved := instance.Resolve()
+		siteClient, err = assapi.New(resolved.BaseURL, resolved.APIKey, cfg.ResolvedProxy(), timeout)
 		if err != nil {
 			return fail(err)
 		}

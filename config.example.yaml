@@ -1,10 +1,14 @@
 # AniSync 配置示例：复制为 config.yaml，与程序放在同一个目录。
 # 所有运行期文件都留在程序同目录：config.yaml 与 data/cache.json。
+#
+# 不想从零写的话，samples/ 目录里有几份现成的完整配置（中文优先 / 收藏党 / 生肉 / 全自动追番），
+# 整份复制过来改掉 instances 就能用；samples/groups.md 是真实数据统计出来的字幕组清单。
 
 # 本地设置页监听地址。用五位数高位端口，避开常见服务端口与系统动态端口区间。
 listen: 127.0.0.1:51837
 
 # 访问站点与实例用的代理；留空则用环境变量 HTTPS_PROXY / ANISYNC_PROXY。
+# 从国内直连 nyaa.si 与 api.bgm.tv 通常不通，配一个本地代理最省事。
 proxy: http://127.0.0.1:7890
 
 sources:
@@ -24,23 +28,34 @@ sources:
   cacheMinutes: 720         # 站点数据缓存时长；0 = 不缓存
 
 rules:
-  maxStandby: 3             # 每个订阅保留多少条副 RSS
+  # 每个订阅保留几条副 RSS。默认 1：多数人只要一个备胎。
+  # 想「所有版本都收」就调大（比如 3），并在白名单文件里把想要的组都点一遍名。
+  maxStandby: 1
 
   # 正则 + 优先级，数字越小越优先；按声明顺序匹配，第一条命中的生效。
   # 匹配对象 = 字幕组名 + 最近的资源标题，所以字幕类型也能排优先级。
   # scope: main = 只参与挑主 RSS（默认）；standby = 只参与挑副 RSS；both = 两边都参与。
   primary:
-    # 字幕类型优先级
+    # 字幕类型优先级。注意简繁要排在繁日前面，否则「简繁日」会先被繁日规则吃掉。
     - {name: 简日内嵌,   match: '(?i)简日|简体|CHS',        priority: 10, scope: main}
-    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 20, scope: main}
-    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 30, scope: main}
+    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 20, scope: main}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 30, scope: main}
     # 字幕组优先级
     - {name: 桜都字幕组, match: '(?i)sakurato|桜都',        priority: 40, scope: main}
     - {name: LoliHouse,  match: '(?i)lolihouse|萝莉屋',     priority: 50, scope: main}
-    # 主 RSS 用字幕组、副 RSS 用放流组：给放流组规则写上 scope: standby 即可
-    - {name: 放流组,     match: '(?i)toonshub|subsplease',  priority: 10, scope: standby}
+    # 副 RSS 的放流组排名不写在这里，放到白名单文件（见下面的 primaryFiles）。
 
-  # 命中即丢弃该候选
+  # 白名单与黑名单各放一个文件，不写死在主配置里 —— 换口味只换文件，主配置不用动。
+  # 相对路径按本文件所在目录解析；文件里是裸列表，和 primary / deny 同构；
+  # 顺序是「内联在前、文件按声明顺序在后」。文件读不出来会直接报错，不会静默跳过。
+  #   primaryFiles  白名单：副 RSS 只放这里点过名的组，顺序就是优先级
+  #   denyFiles     黑名单：命中即整个剔除
+  # 完整例子见 samples/standby.yaml 与 samples/deny.yaml。
+  # primaryFiles: [standby.yaml]
+  # denyFiles: [deny.yaml]
+
+  # 命中即丢弃该候选。比调 priority 更狠：调 priority 只是排后面，deny 是直接不要。
+  # 个人口味（不要合集、不要 720p）写在这里；「明确不要的组」放黑名单文件。
   deny:
     - {match: '合集|全集|BDRip', why: 不要合集}
 
@@ -53,14 +68,71 @@ instances:
     apiKey: ${ANISYNC_KEY_BACKUP}
     enabled: false                  # 临时停用
 
-# 可选：实例里没有的番剧自动新增（默认不启用订阅，避免触发下载）
+# 按番剧规定季度与剧集偏移。
+#
+# 常规做法：提前把 bgm 链接贴进来，一般只写「季度」；集偏移得看是哪个组才写，
+# 因为不同字幕组的 RSS 起数不一样 —— 留空就让 ANI-RSS 按每个 RSS 的实际集数自己推断。
+#
+# 命中该番剧的订阅都会按这里的值写入，实例里「已有的订阅」同样生效，不只是新增的。
+#
+# 匹配方式：先按 bgmId 精确匹配，再按标题包含匹配。bgmId 可以直接贴链接
+# （https://bgm.tv/subject/665390 或 665390 都行），title 栏贴链接也会被认出来。
+# 标题包含匹配时订阅标题带年份与 tmdbid（例如「冰之城墙 (2026) [tmdbid=283428]」），
+# 所以写「冰之城墙」就能命中；日文名写在 jpTitle 里，写「氷の城壁」也能命中。
+#
+# 留空 = 不碰订阅里已有的值。
+# 同一个列表还兼作「实例里没有的番剧自动新增」：加 --add-missing 时按规则新建订阅，
+# 默认不启用（enable: false），避免一上来就触发下载。
 targets: []
-#  - title: 冰之城墙
-#    bgmId: "665390"
-#    instances: [主库]
-#    enable: false
+#  - title: 冰之城墙                        # 也可以只贴链接，或只写 bgmId
+#    bgmId: "https://bgm.tv/subject/665390" # 链接与纯数字都认
+#    jpTitle: 氷の城壁                      # 日文原名；Nyaa 这类站点只认日文，中文名搜不到
+#    instances: [主库]                      # 留空 = 所有实例
+#    enable: false                          # 只影响新增，不会去改已有订阅的开关
+#    season: 2                              # 季度：该番剧的所有订阅共用一个值（最常写的就是这个）
+#    offset: -12                            # 主 RSS 集偏移；只有确认主 RSS 组的起数才写
+#    standbyOffset: -12                     # 副 RSS 集偏移，与主 RSS 分开
+
+# 自动发现：不用打开 ANI-RSS 的 WebUI 加订阅。
+# 先扫一遍「现在有什么番剧在放」，把实例里还没有的当成自动生成的 targets 补进去。
+# 想先看看效果，跑只读的 `AniSync discover` 和 `AniSync plan --discover`。
+discover:
+  enabled: false            # 打开自动发现；命令行 --discover 等价
+
+  # 发现来源，可多选：
+  #   animegarden          扫 AnimeGarden 的主题列表；只列出真的有字幕组在做的番剧，默认用它
+  #   bangumi-calendar     扫 Bangumi 每日放送表；当季新番全集，会把没人做的番剧也带出来
+  #   bangumi-collections  扫某个 Bangumi 用户的「在看」；要填下面的 bgmUser
+  sources: [animegarden]
+
+  # sources 里用了 bangumi-collections 才需要填（用户名或 uid，收藏要公开）。
+  # bgmUser: your_bgm_username
+
+  # 「首播日期在最近多少天内」算在放，默认 180（当季 + 上一季）。
+  # 注意是首播日期不是更新时间，所以还没开播的新番也在范围内。
+  days: 180
+
+  # 每个实例单次最多新增多少条，默认 50。第一次跑别设太大。
+  limit: 50
+
+  # 发现出来的新订阅是否直接启用。留空 = false：只建订阅不下载，确认后再改成 true。
+  enable: false
+
+  # 标题黑名单（正则），命中就不发现。
+  # exclude: ['合集', '(?i)国漫|国创']
 
 sync:
   intervalMinutes: 0    # 后台自动爬取间隔，单位分钟；0 = 不自动
   preview: false        # true = 只生成计划不写入，等价于命令行 --preview
   addMissing: false
+
+  # 季度与剧集偏移的全局兜底值，语义与 ANI-RSS 的 Ani.season / Ani.offset 一致。
+  #
+  # 正常用法是按番剧写在 targets 里（见文件末尾）：季度按番剧给，主副 RSS 的偏移分开给。
+  # 这里只在「番剧没命中 targets、又想统一指定」时才用，写了会作用于所有订阅。
+  #
+  # ANI-RSS 会按每个 RSS 的实际集数自动推断 offset（AniUtil.autoOffset），
+  # 所以默认留空；留空（不写这一行）= 不修改订阅里已有的值。
+  # season: 1
+  # offset: 0
+  # standbyOffset: 0

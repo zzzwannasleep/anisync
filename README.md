@@ -8,17 +8,28 @@
 
 ## 简介
 
-AniSync 读取 ANI-RSS 实例中的订阅列表，按配置的站点优先级获取字幕组与放流组信息，依据正则与优先级规则选出主 RSS 与副 RSS，并写回各实例。
+AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必打开 ANI-RSS 的 WebUI 去加订阅**。
 
-适用于同时维护多个 ANI-RSS 实例、且对字幕组与字幕类型有固定偏好的场景。
+它做两件事：
+
+1. **自动发现该订阅什么** —— 扫 AnimeGarden / Bangumi，看现在有什么番剧在放，把实例里还没有的补进去
+2. **自动挑主副 RSS** —— 按配置的站点优先级获取字幕组与放流组信息，依据正则与优先级规则选出主 RSS 与副 RSS，写回各实例
+
+适用于同时维护多个 ANI-RSS 实例、对字幕组与字幕类型有固定偏好、又不想每季手动加几十个订阅的场景。
 
 ## 特性
 
+- **自动发现**：不用打开 ASS 加订阅。扫 AnimeGarden 主题列表 / Bangumi 放送表 / Bangumi 用户追番，实例里没有的自动补上，默认不启用，确认后再放手
 - **多实例**：一次同步，全部实例同时生效
 - **规则驱动**：正则匹配 + 优先级，可排字幕组，也可排简日内嵌 / 繁日内嵌 / 简繁日内封等字幕类型
 - **主副分工**：主 RSS 用字幕组规则、副 RSS 用放流组规则，由规则的 `scope` 决定
+- **副 RSS 点名制**：只有被 `scope: standby` 规则点过名的组才进副 RSS，没点名的一律不要 —— 不点名就按发布条数兜底的话，会被搬运组和实例侧的伪组名刷满
+- **黑白名单外置**：白名单（放流组排名）与黑名单各放一个 YAML，主配置只留引用；换口味只换文件，主配置不用动
+- **按番剧规定季度与偏移**：和 ASS 一样，季度按番剧给一个值，主 RSS 与副 RSS 的集偏移分开给；实例里已有的订阅同样生效，不必逐个订阅改
 - **站点数据取自实例**：AniBT / AnimeGarden / Mikan 的字幕组列表由 ANI-RSS 接口给出，不重复实现站点解析
-- **安全默认**：预览操作只读；新增订阅默认不启用，不触发下载
+- **开箱即用**：`samples/` 里有四份完整配置可直接抄；`samples/groups.md` 是按真实发布数据统计出来的字幕组清单
+- **动手前能备份**：`AniSync backup` 导出订阅存档，`AniSync restore` 还原；`--prune` 连新增的一起删
+- **安全默认**：预览操作只读；自动新增的订阅默认不启用，不触发下载
 - **多形态**：CLI、Windows 通知区域托盘、macOS 菜单栏应用、本地 Web 设置页
 - **单一二进制**：无运行时依赖；配置文件与缓存都留在程序同目录，删除目录即卸载干净
 
@@ -44,14 +55,49 @@ xattr -dr com.apple.quarantine /Applications/AniSync.app
 ## 快速开始
 
 ```bash
-AniSync init            # 生成配置文件
+AniSync init            # 生成配置文件（或直接从 samples/ 抄一份）
 AniSync check           # 校验配置并测试实例连通性
+AniSync discover        # 看现在有什么番剧在放（只读，没配实例也能跑）
+AniSync backup          # 把当前订阅导出成存档（动手前先留一份）
 AniSync plan            # 预览将要发生的改动，不写入
+AniSync plan --discover # 预览自动发现会新增哪些订阅，不写入
 AniSync sync -y         # 执行同步
+AniSync restore <存档>   # 用存档把订阅改回去；加 --prune 连新增的一起删掉
 AniSync tray            # 常驻托盘 + 后台定时爬取，同时提供 Web 设置页
 ```
 
 Windows 下不带参数双击只打印用法；常驻请执行 `AniSync.exe tray`。
+
+## 样例配置
+
+`samples/` 里有四份完整配置，整份复制成 `config.yaml` 改掉 `instances` 就能用：
+
+| 样例 | 适合谁 |
+| --- | --- |
+| [01-中文优先](samples/01-中文优先.yaml) | 大多数人：简日内嵌 > 简繁内封 > 繁日内嵌，副 RSS 用放流组 |
+| [02-收藏党-蓝光内封](samples/02-收藏党-蓝光内封.yaml) | 等 BD、要软字幕；蓝光/HEVC 10bit 优先，不挡合集 |
+| [03-生肉原声](samples/03-生肉原声.yaml) | 自己压、要日语音轨；生肉/多语优先 |
+| [04-全自动追番](samples/04-全自动追番.yaml) | 想彻底撒手；打开自动发现，每小时自己扫一遍 |
+
+[samples/groups.md](samples/groups.md) 是按真实发布数据统计出来的组清单（谁在发、发什么语言、
+什么封装、哪些是生肉搬运），改 `rules.primary` 之前先在这里查组名的准确写法。
+
+白名单与黑名单是**单独的文件**，主配置只留引用（复制时三个文件一起拿，放同一个目录）：
+
+| 文件 | 是什么 |
+| --- | --- |
+| [samples/standby.yaml](samples/standby.yaml) | 白名单：副 RSS 的放流组排名，顺序就是优先级 |
+| [samples/standby-raw.yaml](samples/standby-raw.yaml) | 白名单变体：生肉向排序 |
+| [samples/deny.yaml](samples/deny.yaml) | 黑名单：明确不要的组 |
+
+```yaml
+rules:
+  maxStandby: 1                  # 保留几条副 RSS；默认 1
+  primaryFiles: [standby.yaml]   # 白名单
+  denyFiles: [deny.yaml]         # 黑名单
+```
+
+[samples/README.md](samples/README.md) 讲了怎么挑、怎么改，以及怎么把样例丢给 AI 帮你改。
 
 ## 配置
 
@@ -66,13 +112,15 @@ sources:
   cacheMinutes: 720              # 站点数据缓存时长；0 = 不缓存
 
 rules:
-  maxStandby: 3
+  maxStandby: 1                  # 保留几条副 RSS；默认 1
   primary:
     - {name: 简日内嵌, match: '(?i)简日|CHS', priority: 10, scope: main}
     - {name: 桜都字幕组, match: '(?i)sakurato|桜都', priority: 40, scope: main}
-    - {name: 放流组, match: '(?i)toonshub', priority: 10, scope: standby}
+    # 副 RSS 的放流组排名放到白名单文件里，见下面的 primaryFiles
+  primaryFiles: [standby.yaml]   # 白名单：副 RSS 只放这里点过名的组
+  denyFiles: [deny.yaml]         # 黑名单：命中即剔除
   deny:
-    - {match: '合集|BDRip', why: 不要合集}
+    - {match: '合集|BDRip', why: 不要合集}   # 个人口味留在主配置里
 
 instances:
   - {name: 主库, baseUrl: 'https://ass.example.com/', apiKey: '${ANISYNC_KEY_MAIN}'}
@@ -81,6 +129,25 @@ sync:
   intervalMinutes: 60            # 后台自动爬取间隔，单位分钟；0 = 不自动
   preview: false
   addMissing: false
+  # 全局兜底，一般留空：正常用法是按番剧写在下面的 targets 里
+  # season: 1
+  # offset: 0
+  # standbyOffset: 0
+
+# 自动发现：不用打开 ASS 的 WebUI 加订阅
+discover:
+  enabled: true                  # 命令行 --discover 等价
+  sources: [animegarden]         # 也可加 bangumi-calendar / bangumi-collections
+  days: 180                      # 首播日期在最近多少天内算在放
+  limit: 50                      # 每个实例单次最多新增多少条
+  enable: false                  # 新订阅是否直接启用；false = 先只建不下载
+  # exclude: ['合集', '(?i)国漫|国创']   # 标题黑名单正则
+
+# 按番剧规定季度与剧集偏移（和 ASS 一样）：季度按番剧给一个值，
+# 主 RSS 与副 RSS 的集偏移分开给。命中该番剧的订阅都按这里的值写入，
+# 实例里已有的订阅同样生效，不只是新增的。
+targets:
+  - {title: 冰之城墙, bgmId: '665390', season: 2, offset: -12, standbyOffset: -12}
 ```
 
 字段说明：
@@ -90,16 +157,20 @@ sync:
 - 规则匹配「字幕组名 + 最近的资源标题」，因此字幕类型与字幕组可写在同一个列表里
 - 未命中任何规则的候选排在命中者之后，按发布热度、站点顺序、名称兜底
 - 同一字幕组在不同站点的镜像按名称去重，仅保留最优者，因此副 RSS 中是不同字幕组而非同一组的多个镜像
+- `targets` 里按番剧规定 `season` / `offset` / `standbyOffset`：`season` 按番剧给一个值（该番剧的所有订阅共用），`offset` 管主 RSS、`standbyOffset` 管副 RSS。匹配先按 `bgmId` 精确匹配，再按 `title` 对订阅标题做包含匹配（订阅标题形如「冰之城墙 (2026) [tmdbid=283428]」，写「冰之城墙」即可）。同一份 `targets` 兼作新增列表：加 `--add-missing` 时，实例里没有的番剧按规则新建，默认 `enable: false`
+- `season` / `offset` / `standbyOffset` 留空时 AniSync 不碰订阅里已有的值。ANI-RSS 会按每个 RSS 的实际集数自动推断偏移，因此默认留空；只有确实要统一指定时才写全局值
 - `enabled: false` 可临时停用某个实例
 
 ## 工作原理
 
-1. 调用 `listAni` 读取各实例的订阅
-2. 按 `sources.order` 依次获取候选 RSS；AniBT / AnimeGarden / Mikan 走实例接口，Nyaa 走关键字搜索
-3. 应用规则过滤与排序：主 RSS 取首项，副 RSS 由 `scope: standby` 规则排序后取前若干项
-4. 与实例现状比对，仅将差异写回
+1. **自动发现**（可选）：扫 AnimeGarden / Bangumi，得到一份「现在在放的番剧」列表；实例里还没有的，
+   被当成自动生成的 `targets` 进入下一步
+2. 调用 `listAni` 读取各实例的订阅
+3. 按 `sources.order` 依次获取候选 RSS；AniBT / AnimeGarden / Mikan 走实例接口，Nyaa 走关键字搜索
+4. 应用规则过滤与排序：主 RSS 取首项，副 RSS 由 `scope: standby` 规则排序后取前若干项
+5. 与实例现状比对，仅将差异写回；新增的订阅先经 `rssToAni` 由实例解析，再按配置决定是否启用
 
-写回使用 ANI-RSS 的 `setAni` 接口。该接口为整对象覆盖语义，AniSync 始终回传完整对象，以免清空未修改的字段。新增订阅先经 `rssToAni` 由实例解析，再以 `enable: false` 写入。
+写回使用 ANI-RSS 的 `setAni` 接口。该接口为整对象覆盖语义，AniSync 始终回传完整对象，以免清空未修改的字段。
 
 ## 站点适配
 
@@ -122,9 +193,12 @@ AniSync probe --site mikan --bgm 665390 --title "冰之城墙"
 | --- | --- |
 | `AniSync init` | 生成默认配置文件 |
 | `AniSync check` | 校验配置，测试实例连通性，输出订阅数量 |
+| `AniSync discover` | 只做自动发现，列出现在有什么番剧在放；只读，不碰实例 |
+| `AniSync backup` | 把每个实例当前的订阅导出成 `data/backup/*.json` |
+| `AniSync restore` | 用存档把订阅改回去；默认只还原，`--prune` 连存档里没有的订阅一起删 |
 | `AniSync probe` | 单站点探针，输出候选与错误 |
-| `AniSync plan` | 生成计划，只读；`--json` 输出 JSON，`--limit N` 限制条数 |
-| `AniSync sync` | 生成并执行；`--preview` 仅预览，`-y` 跳过确认，`--add-missing` 包含新增订阅 |
+| `AniSync plan` | 生成计划，只读；`--json` 输出 JSON，`--limit N` 限制条数，`--discover` 包含自动发现 |
+| `AniSync sync` | 生成并执行；`--preview` 仅预览，`-y` 跳过确认，`--add-missing` / `--discover` 包含新增订阅 |
 | `AniSync serve` | 启动本地 Web 设置页 |
 | `AniSync tray` | 常驻托盘；`sync.intervalMinutes` 大于 0 时启用后台自动同步 |
 

@@ -11,8 +11,8 @@ func TestCleanKeywordStripsAniRssSuffixes(t *testing.T) {
 	cases := map[string]string{
 		"铁旅！邂逅铁道少女 (2026) [tmdbid=302020]": "铁旅！邂逅铁道少女",
 		"FX战士久留美 (2026) [tmdbid=311842]":   "FX战士久留美",
-		"冰之城墙":                               "冰之城墙",
-		"葬送的芙莉莲【合集】":                         "葬送的芙莉莲",
+		"冰之城墙":       "冰之城墙",
+		"葬送的芙莉莲【合集】": "葬送的芙莉莲",
 	}
 	for input, want := range cases {
 		if got := CleanKeyword(input); got != want {

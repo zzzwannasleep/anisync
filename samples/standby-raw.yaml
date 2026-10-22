@@ -1,0 +1,18 @@
+# AniSync 白名单（生肉向）：副 RSS 只放这里点过名的组。
+#
+# 这是 standby.yaml 的一个变体，区别只在排序：生肉向把英文放流组的 MultiSub 排前面
+# （MultiSub 版通常带日语音轨，是很好的生肉备选），压制组垫后。
+#
+# 在 config.yaml 里这样引用（03-生肉原声.yaml 就是这么用的）：
+#   rules:
+#     primaryFiles: [standby-raw.yaml]
+#     maxStandby: 1
+#
+# 想换回中文优先的排序，把 config.yaml 里的 primaryFiles 改成 standby.yaml 即可 ——
+# 这就是把白名单单独放一个文件的意义：换口味不用动主配置。
+
+- {name: Erai-raws, match: '(?i)erai-raws',        priority: 10, scope: standby}
+- {name: ToonsHub,  match: '(?i)toonshub',         priority: 20, scope: standby}
+- {name: Nix-Raws,  match: '(?i)nix-raws|nc-raws', priority: 30, scope: standby}
+- {name: ANi,       match: '(?i)\bani\b|baha',     priority: 40, scope: standby}
+- {name: LoliHouse, match: '(?i)lolihouse|萝莉屋', priority: 50, scope: standby}

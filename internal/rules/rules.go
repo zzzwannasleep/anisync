@@ -6,7 +6,8 @@
 //   - scope 决定这条规则参与挑主 RSS（main）、副 RSS（standby），还是两边都参与（both）；
 //   - 匹配对象是「字幕组名 + 最近的资源标题」，所以同一套机制既能排字幕组，
 //     也能排简日内嵌 / 繁日内嵌 / 简繁日内封这类字幕类型；
-//   - 没命中任何规则的候选排在命中规则的候选之后，同优先级时按热度、站点顺序、名称兜底。
+//   - 没命中任何规则的候选排在命中规则的候选之后，同优先级时按热度、站点顺序、名称兜底；
+//   - 副 RSS 例外：只有被 standby 规则点过名的组才进副 RSS，没点过名的一律不要。
 //
 // 典型用法：主 RSS 用字幕组规则，副 RSS 用放流组规则 —— 给放流组规则写上 scope: standby 即可。
 package rules
@@ -64,7 +65,8 @@ type DenyRule struct {
 func New(primary []Rule, deny []DenyRule, maxStandby int) (*Engine, error) {
 	engine := &Engine{maxStandby: maxStandby}
 	if engine.maxStandby <= 0 {
-		engine.maxStandby = 3
+		// 副 RSS 默认只要一条：多数人只要一个备胎，想全收的自己把这个数字调大。
+		engine.maxStandby = 1
 	}
 	for _, rule := range primary {
 		if strings.TrimSpace(rule.Match) == "" {
@@ -209,12 +211,25 @@ func (e *Engine) Rank(candidates []source.Candidate) []source.Candidate {
 
 // Standby 从主 RSS 排序结果里挑副 RSS。
 //
-// 传入的是已经去重、且主 RSS 已取走首项的候选。这里按副 RSS 规则重新排序：
-// 命中 standby 规则的排前面，没命中的按热度/站点/名称兜底，最后截到 maxStandby 条。
-// 因此「主 RSS 是字幕组、副 RSS 是放流组」只需要给放流组规则写上 scope: standby。
+// 传入的是已经去重、且主 RSS 已取走首项的候选。
+//
+// 只保留命中过 standby 规则的候选：**没在规则里点过名的组，一律不进副 RSS**。
+// 这里故意不做「没命中就按发布条数兜底」——真实数据里那样会被搬运组刷满：
+// Kirara Fantasia 2833 条、生肉/不明字幕、20190912 这类实例侧的伪组名，
+// 全靠热度挤进副 RSS，副 RSS 也就失去意义了。
+//
+// 因此「主 RSS 是字幕组、副 RSS 是放流组」只需要给放流组规则写上 scope: standby；
+// 想要几条副 RSS，就在规则里点几个组的名，再用 maxStandby 截断。
 func (e *Engine) Standby(rest []source.Candidate) []source.Candidate {
-	out := make([]source.Candidate, len(rest))
-	copy(out, rest)
+	out := make([]source.Candidate, 0, len(rest))
+	for _, candidate := range rest {
+		// StandbyRuleName 只有命中规则时才会被填上，比拿优先级跟 UnmatchedPriority 比更准
+		// （用户完全可以给规则写个 1000 的优先级）。
+		if candidate.StandbyRuleName == "" {
+			continue
+		}
+		out = append(out, candidate)
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].StandbyPriority != out[j].StandbyPriority {
 			return out[i].StandbyPriority < out[j].StandbyPriority
