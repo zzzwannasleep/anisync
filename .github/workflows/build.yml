@@ -11,8 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: vet
@@ -28,14 +28,16 @@ jobs:
         include:
           - { runner: windows-latest, goos: windows, goarch: amd64 }
           - { runner: windows-latest, goos: windows, goarch: arm64 }
-          - { runner: macos-latest,  goos: darwin,  goarch: arm64 }
-          - { runner: macos-13,      goos: darwin,  goarch: amd64 }
-          - { runner: ubuntu-latest, goos: linux,   goarch: amd64 }
-          - { runner: ubuntu-latest, goos: linux,   goarch: arm64 }
+          # darwin 双架构都在 macos-latest 上交叉编译即可：
+          # macos-13（Intel）排队久且已被 GitHub 逐步淘汰，没必要为 amd64 单独占一个 runner
+          - { runner: macos-latest,   goos: darwin,  goarch: arm64 }
+          - { runner: macos-latest,   goos: darwin,  goarch: amd64 }
+          - { runner: ubuntu-latest,  goos: linux,   goarch: amd64 }
+          - { runner: ubuntu-latest,  goos: linux,   goarch: arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: build
@@ -48,7 +50,7 @@ jobs:
           suffix=""
           [ "$GOOS" = "windows" ] && suffix=".exe"
           go build -trimpath -ldflags '-s -w' -o "dist/assm-${GOOS}-${GOARCH}${suffix}" ./cmd/assm
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: assm-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -60,7 +62,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
