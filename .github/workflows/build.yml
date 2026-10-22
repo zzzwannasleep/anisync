@@ -4,10 +4,39 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # VERSION 由发布任务自己回写，避免「回写 -> 再触发 -> 再回写」的无限循环
+    paths-ignore: ['VERSION']
   pull_request:
   workflow_dispatch:
 
 jobs:
+  # 版本号规则：VERSION 文件里存的是「下一次要发布的版本」，每次构建发它、然后 +0.0.1。
+  # 打 v* 标签时以标签为准，不回写。
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      next: ${{ steps.v.outputs.next }}
+      isTag: ${{ steps.v.outputs.isTag }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "next=" >> "$GITHUB_OUTPUT"
+            echo "isTag=true" >> "$GITHUB_OUTPUT"
+          else
+            current="$(tr -d '[:space:]' < VERSION)"
+            IFS=. read -r major minor patch <<< "$current"
+            echo "version=${current}" >> "$GITHUB_OUTPUT"
+            echo "next=${major}.${minor}.$((patch + 1))" >> "$GITHUB_OUTPUT"
+            echo "isTag=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 本次版本
+        run: echo "本次发布 v${{ steps.v.outputs.version }}"
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -21,7 +50,7 @@ jobs:
         run: go test ./...
 
   build:
-    needs: test
+    needs: [version, test]
     strategy:
       fail-fast: false
       matrix:
@@ -47,20 +76,22 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.cgo }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p dist
           suffix=""
           if [ "$GOOS" = "windows" ]; then suffix=".exe"; fi
-          go build -trimpath -ldflags '-s -w' -o "dist/assm-${GOOS}-${GOARCH}${suffix}" ./cmd/assm
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "dist/AniSync-${GOOS}-${GOARCH}${suffix}" ./cmd/anisync
           ls -lh dist
 
-      # 光"编译通过"不足以证明菜单栏真的编进去了：检查二进制是否链接了 Cocoa
+      # 光「编译通过」不足以证明菜单栏真的编进去了：检查二进制是否链接了 Cocoa
       - name: verify menu bar is linked (darwin)
         if: matrix.goos == 'darwin'
         run: |
           set -euo pipefail
-          binary="dist/assm-darwin-${{ matrix.goarch }}"
+          binary="dist/AniSync-darwin-${{ matrix.goarch }}"
           otool -L "$binary"
           if ! otool -L "$binary" | grep -q Cocoa; then
             echo "✗ 未链接 Cocoa：菜单栏代码没有编进二进制"
@@ -70,20 +101,21 @@ jobs:
 
       - name: package .app bundle (darwin)
         if: matrix.goos == 'darwin'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME:-dev}"
-          version="${version#v}"
-          bash scripts/package-macos.sh "dist/assm-darwin-${{ matrix.goarch }}" "$version" "${{ matrix.goarch }}"
+          bash scripts/package-macos.sh "dist/AniSync-darwin-${{ matrix.goarch }}" "$VERSION" "${{ matrix.goarch }}"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: assm-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: AniSync-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
+  # 构建全部通过后才发版：构建挂了不会白白吃掉一个版本号。
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -92,7 +124,28 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: AniSync v${{ needs.version.outputs.version }}
           files: artifacts/*
           generate_release_notes: true
+
+      - uses: actions/checkout@v7
+        if: needs.version.outputs.isTag == 'false'
+        with:
+          ref: main
+
+      - name: 回写下一次版本号
+        if: needs.version.outputs.isTag == 'false'
+        env:
+          NEXT: ${{ needs.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          echo "$NEXT" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: 下一个版本号 ${NEXT} [skip ci]"
+          git push origin main

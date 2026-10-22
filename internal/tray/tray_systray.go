@@ -23,14 +23,14 @@ func Quit() { systray.Quit() }
 func onReady(opts Options) {
 	setIcon()
 	systray.SetTitle(opts.Title)
-	systray.SetTooltip("assm · 多 ANI-RSS 实例主副 RSS 打点")
+	systray.SetTooltip("AniSync · 多 ANI-RSS 实例主副 RSS 自动打点")
 
 	settings := systray.AddMenuItem("打开设置页", opts.Settings)
 	syncItem := systray.AddMenuItem("立即同步", "按规则重新打点主副 RSS")
 	status := systray.AddMenuItem("状态：就绪", "最近一次同步结果")
 	status.Disable()
 	systray.AddSeparator()
-	quit := systray.AddMenuItem("退出", "退出 assm")
+	quit := systray.AddMenuItem("退出", "退出 AniSync")
 
 	var busy sync.Mutex
 	for {

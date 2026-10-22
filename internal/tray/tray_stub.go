@@ -14,7 +14,7 @@ import (
 //   - Linux：systray 需要 gtk/appindicator 与 cgo，交给桌面环境自行选择用不用；
 //   - macOS 未开 cgo：Objective-C 实现无法编译，用 Web 设置页代替菜单栏图标。
 func Run(opts Options) int {
-	fmt.Printf("assm 托盘：当前平台 %s 使用本地 Web 设置页。\n", runtime.GOOS)
+	fmt.Printf("AniSync 托盘：当前平台 %s 使用本地 Web 设置页。\n", runtime.GOOS)
 	if runtime.GOOS == "darwin" {
 		fmt.Println("提示：macOS 原生菜单栏图标需要以 CGO_ENABLED=1 在 macOS 上构建。")
 	}

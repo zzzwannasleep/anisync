@@ -8,6 +8,10 @@ Push-Location $root
 try {
     New-Item -ItemType Directory -Force -Path dist | Out-Null
 
+    $version = (Get-Content (Join-Path $root 'VERSION') -Raw).Trim()
+    Write-Host "version $version"
+    Write-Host ""
+
     $targets = @(
         @{ os = 'windows'; arch = 'amd64' },
         @{ os = 'windows'; arch = 'arm64' },
@@ -22,10 +26,10 @@ try {
         $env:GOARCH = $target.arch
         $env:CGO_ENABLED = '0'          # fully static, no external runtime
         $suffix = if ($target.os -eq 'windows') { '.exe' } else { '' }
-        $out = "dist/assm-$($target.os)-$($target.arch)$suffix"
+        $out = "dist/AniSync-$($target.os)-$($target.arch)$suffix"
 
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        go build -trimpath -ldflags '-s -w' -o $out ./cmd/assm
+        go build -trimpath -ldflags "-s -w -X main.version=$version" -o $out ./cmd/anisync
         $sw.Stop()
 
         $size = [math]::Round((Get-Item $out).Length / 1MB, 1)
@@ -36,7 +40,7 @@ try {
     Write-Host "Artifacts in dist/."
     Write-Host "NOTE: darwin artifacts built here are pure Go (no native menu bar icon),"
     Write-Host "      because the macOS menu bar requires cgo and must be built on macOS."
-    Write-Host "      Use CI artifacts (assm-<version>-macos-*.app.zip) for the menu bar app."
+    Write-Host "      Use CI artifacts (AniSync-<version>-macos-*.app.zip) for the menu bar app."
 }
 finally {
     $env:GOOS = ''

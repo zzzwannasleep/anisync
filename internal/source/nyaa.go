@@ -9,13 +9,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/zzzwannasleep/anisync/internal/httpx"
 )
 
 // Nyaa 适配 nyaa.si。
-// Nyaa 没有「字幕组」概念，只有种子标题里的 [放流组] 前缀，所以：
-//  1. 用番剧标题搜一次 RSS；
-//  2. 从标题里提取 [组名]，按出现次数排序；
-//  3. 每个组生成一个「限定搜索词」的 RSS 地址，直接可以喂给 ANI-RSS（type=other）。
+//
+// Nyaa 没有「字幕组」维度，也没有对应的 ANI-RSS 接口，它的 RSS 一律是关键字搜索型，
+// 所以这里：搜一次 → 从标题里提取 [放流组] → 每个组生成一个限定搜索词的 RSS。
+// 这种搜索型 RSS ANI-RSS 可以直接吃（Ani.type = other）。
 type Nyaa struct{ client *http.Client }
 
 // Name 返回站点标识。
@@ -35,8 +37,7 @@ func (n *Nyaa) Groups(ctx context.Context, q Query) ([]Candidate, error) {
 		return nil, errf("nyaa 需要标题关键词")
 	}
 
-	feedURL := n.searchURL(keyword, "")
-	body, status, err := getText(ctx, n.client, feedURL)
+	body, status, err := getText(ctx, n.client, n.searchURL(keyword, ""))
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +60,16 @@ func (n *Nyaa) Groups(ctx context.Context, q Query) ([]Candidate, error) {
 	}
 
 	counts := map[string]int{}
+	latest := map[string][]string{}
 	for _, item := range feed.Channel.Items {
-		if match := nyaaGroupPrefix.FindStringSubmatch(item.Title); match != nil {
-			counts[clean(match[1])]++
+		match := nyaaGroupPrefix.FindStringSubmatch(item.Title)
+		if match == nil {
+			continue
+		}
+		name := clean(match[1])
+		counts[name]++
+		if len(latest[name]) < maxSampleTitles {
+			latest[name] = append(latest[name], clean(item.Title))
 		}
 	}
 	groups := make([]string, 0, len(counts))
@@ -86,25 +94,25 @@ func (n *Nyaa) Groups(ctx context.Context, q Query) ([]Candidate, error) {
 			Subgroup: name,
 			Type:     "other",
 			URL:      n.searchURL(keyword, name),
+			Titles:   latest[name],
+			Weight:   counts[name],
 		})
 	}
 	return dedupe(candidates), nil
 }
 
-// searchURL 拼出限定放流组的搜索 RSS。
-// 分类用 0_0（全部）：实测 c=1_2（英译）对中文字幕组返回空结果，
-// 按分类过滤没有意义——后面还要按 [组名] 精确聚合。
+// searchURL 拼出限定放流组的搜索 RSS，形式与 nyaa.si 搜索页「RSS」按钮给出的链接一致：
+//
+//	https://nyaa.si/?page=rss&q=%5BToonsHub%5D+White+Cat+Legend+S03&c=0_0&f=0
+//
+// c=0_0 是全部分类。Nyaa 没有字幕组维度，按分类过滤（例如 1_0 动画）反而会漏掉
+// 挂在其它分类下的同组资源，所以统一用全分类，靠标题里的 [组名] 精确聚合。
 func (n *Nyaa) searchURL(keyword, group string) string {
-	query := keyword
+	query := strings.TrimSpace(keyword)
 	if group != "" {
-		query = keyword + " " + group
+		query += " " + group
 	}
-	values := url.Values{}
-	values.Set("page", "rss")
-	values.Set("q", query)
-	values.Set("c", "0_0")
-	values.Set("f", "0")
-	return n.host() + "/?" + strings.ReplaceAll(values.Encode(), "+", "%20")
+	return n.host() + "/?page=rss&q=" + url.QueryEscape(query) + "&c=0_0&f=0"
 }
 
 func (n *Nyaa) host() string {
@@ -112,4 +120,11 @@ func (n *Nyaa) host() string {
 		return "https://nyaa.si"
 	}
 	return strings.TrimRight(NyaaHost, "/")
+}
+
+// getText 抓取 RSS/XML 文本。
+func getText(ctx context.Context, client *http.Client, rawURL string) ([]byte, int, error) {
+	return httpx.Get(ctx, client, rawURL, map[string]string{
+		"Accept": "application/xml,text/xml,text/html;q=0.9,*/*;q=0.8",
+	})
 }

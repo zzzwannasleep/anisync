@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>assm · 多实例主副 RSS 打点</title>
+<title>AniSync · 多实例主副 RSS 打点</title>
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e9ef; --dim:#8b93a5; --accent:#3ba776; --warn:#c9772f; --err:#c0453f; }
   * { box-sizing:border-box; }
@@ -11,13 +11,14 @@
   header { display:flex; align-items:center; gap:12px; padding:16px 22px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
   header h1 { font-size:16px; margin:0; font-weight:600; }
   header .path { color:var(--dim); font-size:12px; margin-left:auto; font-family:ui-monospace,Consolas,monospace; }
-  main { max-width:1180px; margin:0 auto; padding:22px; display:grid; gap:18px; }
+  main { max-width:1220px; margin:0 auto; padding:22px; display:grid; gap:18px; }
   section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
   section > h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 12px; font-weight:600; }
   .row { display:grid; gap:8px; align-items:center; }
   .inst { grid-template-columns: 130px 1fr 1fr 74px 74px; }
-  .rule { grid-template-columns: 150px 1fr 80px 90px 60px; }
+  .rule { grid-template-columns: 140px 1fr 74px 104px 104px 60px; }
   .deny { grid-template-columns: 1fr 140px 60px; }
+  .head { color:var(--dim); font-size:12px; margin-bottom:4px; }
   input, select { background:#0c0e13; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 9px; font:inherit; width:100%; }
   input:focus, select:focus { outline:1px solid var(--accent); border-color:var(--accent); }
   button { background:#20242e; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
@@ -38,13 +39,14 @@
   .tag.add { color:#7fd0a0; border-color:#22452f; }
   .tag.noop { color:var(--dim); }
   .chips { display:flex; gap:6px; flex-wrap:wrap; }
-  .chip { border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:grab; font-size:12px; background:#0c0e13; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:pointer; font-size:12px; background:#0c0e13; }
   .chip.on { border-color:var(--accent); color:var(--accent); }
+  .grid2 { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:10px; }
 </style>
 </head>
 <body>
 <header>
-  <strong style="color:var(--accent)">assm</strong>
+  <strong style="color:var(--accent)">AniSync</strong>
   <h1>多 ANI-RSS 实例 · 主副 RSS 自动打点</h1>
   <span class="path" id="cfgPath"></span>
 </header>
@@ -60,20 +62,35 @@
   </section>
 
   <section>
-    <h2>站点爬取优先级（从上到下）</h2>
+    <h2>站点数据来源与爬取顺序</h2>
+    <div class="grid2">
+      <label class="hint">站点数据取自实例
+        <select id="siteInstance"></select>
+      </label>
+      <label class="hint">站点超时（秒）<input type="number" id="timeout" min="5" max="120"></label>
+      <label class="hint">缓存时长（分钟，0 = 不缓存）<input type="number" id="cacheMinutes" min="0" max="10080"></label>
+    </div>
+    <p class="hint" style="margin:12px 0 6px">爬取优先级（点击切换启用，数字为顺序）：</p>
     <div class="chips" id="sourceOrder"></div>
     <div class="toolbar" style="margin-top:10px">
       <label class="hint"><input type="checkbox" id="stopOnFirst" style="width:auto"> 命中第一个站点就停止（更快，但副 RSS 会少）</label>
-      <label class="hint">超时 <input type="number" id="timeout" style="width:70px" min="5" max="120"> 秒</label>
     </div>
   </section>
 
   <section>
-    <h2>字幕组规则（正则 + 优先级，数字越小越优先）</h2>
+    <h2>规则（正则 + 优先级，数字越小越优先）</h2>
+    <p class="hint" style="margin:0 0 10px">
+      匹配对象是「字幕组名 + 最近的资源标题」，所以既能排字幕组，也能排字幕类型。
+      作用域 <code>主 RSS</code> / <code>副 RSS</code> 决定这条规则给谁排序 —— 主 RSS 用字幕组、副 RSS 用放流组就靠它。
+    </p>
+    <div class="row rule head">
+      <span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>限定站点</span><span></span>
+    </div>
     <div id="rules"></div>
     <div class="toolbar" style="margin-top:10px">
       <button onclick="addRule()">+ 添加规则</button>
-      <span class="hint">例：<code>(?i)sakurato|桜都</code> 优先级 10；<code>lolihouse</code> 优先级 20</span>
+      <button onclick="addTypeRules()">+ 预置字幕类型规则</button>
+      <span class="hint">例：<code>简日|CHS</code> 主 RSS 优先级 10；<code>繁日|CHT</code> 主 RSS 优先级 20；<code>toonshub</code> 副 RSS 优先级 10</span>
     </div>
   </section>
 
@@ -87,12 +104,23 @@
   </section>
 
   <section>
+    <h2>同步与后台</h2>
+    <div class="grid2">
+      <label class="hint">后台自动爬取间隔（分钟，0 = 不自动）<input type="number" id="intervalMinutes" min="0" max="10080"></label>
+      <label class="hint">本地设置页监听地址<input id="listen" placeholder="127.0.0.1:51837"></label>
+    </div>
+    <div class="toolbar" style="margin-top:10px">
+      <label class="hint"><input type="checkbox" id="preview" style="width:auto"> 预览模式（生成计划但不写入）</label>
+      <label class="hint"><input type="checkbox" id="addMissing" style="width:auto"> 自动新增实例里没有的订阅（默认不启用，避免触发下载）</label>
+    </div>
+  </section>
+
+  <section>
     <h2>执行</h2>
     <div class="toolbar">
       <button class="primary" onclick="save()">保存配置</button>
-      <button onclick="plan()">生成计划（只读）</button>
+      <button onclick="plan()">预览计划</button>
       <button class="primary" onclick="sync()">执行同步</button>
-      <label class="hint"><input type="checkbox" id="addMissing" style="width:auto"> 自动新增实例里没有的订阅（默认不启用，避免触发下载）</label>
       <span class="status" id="status"></span>
     </div>
     <div id="planOut" style="margin-top:14px"></div>
@@ -112,11 +140,17 @@ function setStatus(text, kind) {
   el.textContent = text || '';
   el.className = 'status ' + (kind || '');
 }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 async function load() {
   const [data, src] = await Promise.all([api('/api/config'), api('/api/sources')]);
   cfg = data.config;
   sources = src;
+  cfg.rules = cfg.rules || {};
+  cfg.rules.primary = cfg.rules.primary || [];
+  cfg.rules.deny = cfg.rules.deny || [];
+  cfg.sources = cfg.sources || {};
+  cfg.sync = cfg.sync || {};
   document.getElementById('cfgPath').textContent = data.path;
   render();
 }
@@ -137,6 +171,10 @@ function render() {
   });
   if (!(cfg.instances || []).length) box.innerHTML = '<p class="hint">还没有实例，点下面的按钮添加。</p>';
 
+  const picker = document.getElementById('siteInstance');
+  picker.innerHTML = '<option value="">（第一个启用的实例）</option>' +
+    (cfg.instances || []).map((it) => `<option value="${esc(it.name)}" ${cfg.sources.instance === it.name ? 'selected' : ''}>${esc(it.name || it.baseUrl)}</option>`).join('');
+
   const order = document.getElementById('sourceOrder');
   order.innerHTML = '';
   sources.forEach((src) => {
@@ -150,8 +188,12 @@ function render() {
   });
   document.getElementById('stopOnFirst').checked = !!cfg.sources.stopOnFirstMatch;
   document.getElementById('timeout').value = cfg.sources.timeoutSeconds || 25;
+  document.getElementById('cacheMinutes').value = cfg.sources.cacheMinutes ?? 720;
   document.getElementById('maxStandby').value = cfg.rules.maxStandby || 3;
   document.getElementById('addMissing').checked = !!cfg.sync.addMissing;
+  document.getElementById('preview').checked = !!cfg.sync.preview;
+  document.getElementById('intervalMinutes').value = cfg.sync.intervalMinutes || 0;
+  document.getElementById('listen').value = cfg.listen || '127.0.0.1:51837';
 
   const rules = document.getElementById('rules');
   rules.innerHTML = '';
@@ -160,8 +202,13 @@ function render() {
     row.className = 'row rule';
     row.innerHTML = `
       <input value="${esc(rule.name || '')}" placeholder="名字" oninput="cfg.rules.primary[${i}].name=this.value">
-      <input value="${esc(rule.match || '')}" placeholder="正则，例如 (?i)sakurato|桜都" oninput="cfg.rules.primary[${i}].match=this.value">
+      <input value="${esc(rule.match || '')}" placeholder="正则，例如 简日|CHS" oninput="cfg.rules.primary[${i}].match=this.value">
       <input type="number" value="${rule.priority ?? 10}" oninput="cfg.rules.primary[${i}].priority=Number(this.value)">
+      <select onchange="cfg.rules.primary[${i}].scope=this.value">
+        <option value="main" ${(rule.scope || 'main') === 'main' ? 'selected' : ''}>主 RSS</option>
+        <option value="standby" ${rule.scope === 'standby' ? 'selected' : ''}>副 RSS</option>
+        <option value="both" ${rule.scope === 'both' ? 'selected' : ''}>两者</option>
+      </select>
       <select onchange="cfg.rules.primary[${i}].site=this.value">
         <option value="">不限站点</option>
         ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
@@ -169,7 +216,7 @@ function render() {
       <button class="danger" onclick="delRule(${i})">删除</button>`;
     rules.appendChild(row);
   });
-  if (!(cfg.rules.primary || []).length) rules.innerHTML = '<p class="hint">没有规则时，所有字幕组按站点顺序排序，第一个当主 RSS。</p>';
+  if (!(cfg.rules.primary || []).length) rules.innerHTML = '<p class="hint">没有规则时，所有候选按站点顺序与热度排序，第一个当主 RSS。</p>';
 
   const deny = document.getElementById('deny');
   deny.innerHTML = '';
@@ -184,7 +231,6 @@ function render() {
   });
 }
 
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function toggleSource(id) {
   const list = cfg.sources.order || (cfg.sources.order = []);
   const at = list.indexOf(id);
@@ -193,16 +239,28 @@ function toggleSource(id) {
 }
 function addInstance() { (cfg.instances = cfg.instances || []).push({ name: '', baseUrl: '', apiKey: '', enabled: true }); render(); }
 function delInstance(i) { cfg.instances.splice(i, 1); render(); }
-function addRule() { (cfg.rules.primary = cfg.rules.primary || []).push({ name: '', match: '', priority: 10, site: '' }); render(); }
+function addRule() { cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', site: '' }); render(); }
+function addTypeRules() {
+  cfg.rules.primary.push(
+    { name: '简日内嵌', match: '(?i)简日|简体|CHS', priority: 10, scope: 'main', site: '' },
+    { name: '繁日内嵌', match: '(?i)繁日|繁體|CHT', priority: 20, scope: 'main', site: '' },
+    { name: '简繁日内封', match: '(?i)简繁|内封', priority: 30, scope: 'main', site: '' });
+  render();
+}
 function delRule(i) { cfg.rules.primary.splice(i, 1); render(); }
-function addDeny() { (cfg.rules.deny = cfg.rules.deny || []).push({ match: '', why: '' }); render(); }
+function addDeny() { cfg.rules.deny.push({ match: '', why: '' }); render(); }
 function delDeny(i) { cfg.rules.deny.splice(i, 1); render(); }
 
 function collect() {
+  cfg.sources.instance = document.getElementById('siteInstance').value;
   cfg.sources.stopOnFirstMatch = document.getElementById('stopOnFirst').checked;
   cfg.sources.timeoutSeconds = Number(document.getElementById('timeout').value) || 25;
+  cfg.sources.cacheMinutes = Number(document.getElementById('cacheMinutes').value) || 0;
   cfg.rules.maxStandby = Number(document.getElementById('maxStandby').value) || 3;
   cfg.sync.addMissing = document.getElementById('addMissing').checked;
+  cfg.sync.preview = document.getElementById('preview').checked;
+  cfg.sync.intervalMinutes = Number(document.getElementById('intervalMinutes').value) || 0;
+  cfg.listen = document.getElementById('listen').value || '127.0.0.1:51837';
   return cfg;
 }
 
@@ -222,17 +280,18 @@ async function testInstance(i) {
 }
 
 async function plan() {
-  await save();
+  const saved = await save();
   setStatus('正在爬取站点并生成计划…');
   document.getElementById('planOut').innerHTML = '<p class="hint">爬取中，站点多/番剧多时需要一会儿…</p>';
   const res = await api('/api/plan', { method: 'POST' });
   if (res.error) { document.getElementById('planOut').innerHTML = ''; return setStatus(res.error, 'err'); }
   renderPlan(res);
-  setStatus('计划已生成', 'ok');
+  setStatus('计划已生成（站点数据取自 ' + (res.siteInstance || '未知') + '）', 'ok');
 }
 
 async function sync() {
   await save();
+  if (cfg.sync.preview) return setStatus('当前是预览模式，请先取消勾选再执行同步', 'err');
   setStatus('正在同步…');
   const res = await api('/api/sync', { method: 'POST' });
   if (res.error) return setStatus(res.error, 'err');
@@ -243,7 +302,7 @@ async function sync() {
 function renderPlan(plan) {
   const rows = [];
   for (const site of plan.sites || []) {
-    rows.push(`<tr><td>${site.site}</td><td colspan="3">${site.error ? '<span class="tag" style="color:var(--err)">' + esc(site.error) + '</span>' : site.candidates + ' 个候选'}</td></tr>`);
+    rows.push(`<tr><td>${esc(site.site)}</td><td colspan="3">${site.error ? '<span class="tag" style="color:var(--err)">' + esc(site.error) + '</span>' : site.candidates + ' 个候选'}</td></tr>`);
   }
   const head = `<table><thead><tr><th style="width:110px">实例</th><th style="width:70px">动作</th><th>订阅 / 变更</th></tr></thead><tbody>`;
   const body = (plan.actions || []).filter((a) => a.kind !== 'noop').map((a) => {

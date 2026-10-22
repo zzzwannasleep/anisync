@@ -1,5 +1,9 @@
-// Package source 是站点适配层：把「一个番剧」翻译成「各站点的字幕组/放送组 RSS 候选」。
-// 所有接口路径都对照 ani-rss v3.2.52 源码与线上真实响应实现，不做猜测。
+// Package source 是站点适配层：把「一个番剧」翻译成「各站点的字幕组/放流组 RSS 候选」。
+//
+// AniBT / AnimeGarden / Mikan 三家不自己爬网页，而是直接调用 ANI-RSS 实例的
+// aniBTGroup / animeGardenGroup / mikanGroup 接口——实例怎么认这个站点，我们就怎么认，
+// 拿到的是它自己拼好的 RSS 地址，不会因为站点改版而各写一份解析。
+// Nyaa 没有对应的 ASS 接口（ANI-RSS 本身也不集成 Nyaa），由本包按关键字搜索 RSS 自行适配。
 package source
 
 import (
@@ -9,6 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/zzzwannasleep/anisync/internal/assapi"
+	"github.com/zzzwannasleep/anisync/internal/cache"
 )
 
 // Query 描述要查找的番剧。
@@ -19,6 +26,7 @@ type Query struct {
 	JPTitle    string // 日文标题，用于搜索
 	NyaaQuery  string // 给 nyaa 用的搜索词
 	MikanTitle string
+	RSSURL     string // 订阅当前的 RSS 地址
 }
 
 // Candidate 是一个可用的 RSS 候选。
@@ -30,11 +38,17 @@ type Candidate struct {
 	BgmURL   string `json:"bgmUrl,omitempty"`
 	Subgroup string `json:"subgroup,omitempty"`
 
+	// Titles 是该组最近的资源标题。字幕类型（简日/繁日/内嵌/内封）只写在标题里，
+	// 规则引擎靠它来排「简日内嵌 > 繁日内嵌 > 简繁日内封」这类优先级。
+	Titles []string `json:"-"`
+
 	// 以下字段由规则引擎填充
-	Priority  int    `json:"priority"`
-	SiteOrder int    `json:"siteOrder"`
-	RuleName  string `json:"ruleName,omitempty"`
-	// Weight 是站点给出的「热度」（发布数/资源数），用于同优先级下的兜底排序。
+	Priority        int    `json:"priority"`
+	StandbyPriority int    `json:"standbyPriority"`
+	SiteOrder       int    `json:"siteOrder"`
+	RuleName        string `json:"ruleName,omitempty"`
+	StandbyRuleName string `json:"standbyRuleName,omitempty"`
+	// Weight 是站点给出的「热度」（最近的发布条数），用于同优先级下的兜底排序。
 	Weight int `json:"weight,omitempty"`
 }
 
@@ -44,26 +58,40 @@ type Source interface {
 	Groups(ctx context.Context, q Query) ([]Candidate, error)
 }
 
+// SiteType 把站点标识映射成 ANI-RSS 的 Ani.type 取值。
+func SiteType(site string) string {
+	switch strings.ToLower(site) {
+	case "anibt":
+		return "ani-bt"
+	case "animegarden":
+		return "anime-garden"
+	case "mikan":
+		return "mikan"
+	default:
+		return "other"
+	}
+}
+
 // Registry 按配置的优先级顺序调度各站点。
 type Registry struct {
-	client  *http.Client
 	timeout time.Duration
 	order   []string
 	sources map[string]Source
 }
 
 // NewRegistry 构建注册表；order 为站点优先级（从高到低）。
-func NewRegistry(client *http.Client, timeout time.Duration, order []string) *Registry {
+// site 是借用站点数据的 ANI-RSS 实例，为 nil 时仅 Nyaa 可用。
+func NewRegistry(site *assapi.Client, httpClient *http.Client, timeout time.Duration, order []string, store *cache.Store) *Registry {
 	if timeout <= 0 {
 		timeout = 25 * time.Second
 	}
 	all := map[string]Source{
-		"anibt":       &AniBT{client: client},
-		"animegarden": &AnimeGarden{client: client},
-		"mikan":       &Mikan{client: client},
-		"nyaa":        &Nyaa{client: client},
+		"anibt":       &assSource{site: "anibt", client: site, store: store},
+		"animegarden": &assSource{site: "animegarden", client: site, store: store},
+		"mikan":       &assSource{site: "mikan", client: site, store: store},
+		"nyaa":        &Nyaa{client: httpClient},
 	}
-	r := &Registry{client: client, timeout: timeout, sources: all}
+	r := &Registry{timeout: timeout, sources: all}
 	seen := map[string]bool{}
 	for _, name := range order {
 		name = strings.ToLower(strings.TrimSpace(name))
@@ -86,7 +114,6 @@ type SiteResult struct {
 	Site       string
 	Candidates []Candidate
 	Err        error
-	Skipped    bool
 }
 
 // Collect 按优先级顺序爬取；stopOnFirst 为 true 时命中即停。
@@ -132,13 +159,8 @@ func BgmIDFromURL(raw string) string {
 	return ""
 }
 
-// BgmIDFromAny 与 BgmIDFromURL 等价，语义上表示「任意 URL」。
-func BgmIDFromAny(raw string) string { return BgmIDFromURL(raw) }
-
 // clean 去掉多余空白。
-func clean(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
+func clean(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 var (
 	keywordBrackets = regexp.MustCompile(`[\[【][^\]】]*[\]】]`)
@@ -172,9 +194,13 @@ func dedupe(list []Candidate) []Candidate {
 	return out
 }
 
-// escapeQuery 把搜索词编码进 query。
-func escapeQuery(s string) string {
-	return strings.ReplaceAll(strings.TrimSpace(s), " ", "+")
-}
-
 func errf(format string, args ...any) error { return fmt.Errorf(format, args...) }
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}

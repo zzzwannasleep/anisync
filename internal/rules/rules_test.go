@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/zzzwannasleep/assm/internal/source"
+	"github.com/zzzwannasleep/anisync/internal/source"
 )
 
 func mustEngine(t *testing.T, primary []Rule, deny []DenyRule, maxStandby int) *Engine {
@@ -113,5 +113,73 @@ func TestSiteScopedRulePromotesItsSiteInDedupe(t *testing.T) {
 func TestInvalidRegexIsRejected(t *testing.T) {
 	if _, err := New([]Rule{{Name: "坏规则", Match: "([", Priority: 1}}, nil, 3); err == nil {
 		t.Fatal("非法正则应当报错")
+	}
+}
+
+// 字幕类型（简日/繁日/内嵌/内封）只写在资源标题里，规则必须能匹配到标题。
+func TestRuleMatchesSubtitleTypeInTitles(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "简日内嵌", Match: `简日|CHS`, Priority: 10},
+		{Name: "繁日内嵌", Match: `繁日|CHT`, Priority: 20},
+	}, nil, 3)
+
+	chs := source.Candidate{Site: "anibt", Label: "桜都字幕组", Titles: []string{"[桜都字幕组] 冰之城墙 [15][1080P][简日内嵌]"}}
+	if name, priority, ok := engine.Match(chs); !ok || name != "简日内嵌" || priority != 10 {
+		t.Fatalf("简日标题应命中简日规则，实际 ok=%v name=%q priority=%d", ok, name, priority)
+	}
+
+	cht := source.Candidate{Site: "anibt", Label: "桜都字幕组", Titles: []string{"[桜都字幕组] 冰之城墙 [15][1080P][繁日内嵌]"}}
+	if name, _, ok := engine.Match(cht); !ok || name != "繁日内嵌" {
+		t.Fatalf("繁日标题应命中繁日规则，实际 ok=%v name=%q", ok, name)
+	}
+}
+
+// 主 RSS 用字幕组规则、副 RSS 用放流组规则：靠 scope 把两套规则分开。
+func TestStandbyScopeSelectsRawReleaseGroup(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "主力字幕组", Match: `桜都`, Priority: 10, Scope: ScopeMain},
+		{Name: "放流组", Match: `ToonsHub`, Priority: 10, Scope: ScopeStandby},
+	}, nil, 3)
+
+	// 字幕组候选在主 RSS 排第一，但它不参与副 RSS 规则，所以副 RSS 里排不过放流组
+	candidates := []source.Candidate{
+		{Site: "mikan", Label: "桜都字幕组", SiteOrder: 2, Weight: 9, URL: "sub"},
+		{Site: "nyaa", Label: "ToonsHub", SiteOrder: 3, Weight: 1, URL: "raw"},
+	}
+	ranked := engine.Rank(candidates)
+	if ranked[0].URL != "sub" {
+		t.Fatalf("主 RSS 应是字幕组，实际 %v", labels(ranked))
+	}
+	standby := engine.Standby(ranked[1:])
+	if len(standby) != 1 || standby[0].URL != "raw" {
+		t.Fatalf("副 RSS 应是放流组，实际 %v", labels(standby))
+	}
+}
+
+// 没有配置 standby 规则时，副 RSS 行为要和以前一致（按热度兜底），不能变空。
+func TestStandbyFallsBackToHeatWithoutStandbyRules(t *testing.T) {
+	engine := mustEngine(t, []Rule{{Name: "字幕组", Match: `桜都`, Priority: 10}}, nil, 2)
+	ranked := engine.Rank([]source.Candidate{
+		{Site: "mikan", Label: "桜都字幕组", SiteOrder: 0, Weight: 9, URL: "a"},
+		{Site: "anibt", Label: "小透明组", SiteOrder: 1, Weight: 1, URL: "b"},
+		{Site: "nyaa", Label: "热门组", SiteOrder: 2, Weight: 50, URL: "c"},
+	})
+	standby := engine.Standby(ranked[1:])
+	if len(standby) != 2 {
+		t.Fatalf("应保留 2 条副 RSS，实际 %d: %v", len(standby), labels(standby))
+	}
+	if standby[0].URL != "c" {
+		t.Fatalf("没有 standby 规则时按热度排序，热门组应排第一，实际 %v", labels(standby))
+	}
+}
+
+func TestScopeBothParticipatesInBoth(t *testing.T) {
+	engine := mustEngine(t, []Rule{{Name: "两边都算", Match: `通用组`, Priority: 1, Scope: ScopeBoth}}, nil, 3)
+	candidate := source.Candidate{Site: "anibt", Label: "通用组"}
+	if _, _, ok := engine.Match(candidate); !ok {
+		t.Fatal("scope=both 应参与主 RSS 排序")
+	}
+	if _, _, ok := engine.StandbyMatch(candidate); !ok {
+		t.Fatal("scope=both 应参与副 RSS 排序")
 	}
 }

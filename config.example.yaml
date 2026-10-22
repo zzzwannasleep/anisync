@@ -1,59 +1,57 @@
-# assm 配置示例：复制为 config.yaml 后按需修改
-#   Windows: %APPDATA%\assm\config.yaml
-#   macOS/Linux: ~/.config/assm/config.yaml
-# 也可以用 --config 指定任意路径。
+# AniSync 配置示例：复制为 config.yaml，与程序放在同一个目录。
+# 所有运行期文件都留在程序同目录：config.yaml 与 data/cache.json。
 
-# 本地 Web 设置页监听地址（assm serve / assm tray 使用）
-listen: 127.0.0.1:7788
+# 本地设置页监听地址。用五位数高位端口，避开常见服务端口与系统动态端口区间。
+listen: 127.0.0.1:51837
 
-# 访问站点/实例用的代理，留空则用环境变量 HTTPS_PROXY
+# 访问站点与实例用的代理；留空则用环境变量 HTTPS_PROXY / ANISYNC_PROXY。
 proxy: http://127.0.0.1:7890
 
-# 站点爬取优先级：从高到低，同优先级的候选按这个顺序兜底
 sources:
+  # 站点数据取自哪个实例；留空 = 第一个启用的实例。
+  # AniBT / AnimeGarden / Mikan 的字幕组列表都由这个实例的接口给出。
+  instance: ""
+
+  # 爬取优先级，从高到低；同优先级的候选按这个顺序兜底。
   order:
-    - anibt          # AniBT 官方 API，字幕组维度
-    - animegarden    # AnimeGarden API，字幕组维度
-    - mikan          # Mikan 标题搜索 + 详情页反查 bgm
-    - nyaa           # Nyaa 搜索，按 [放流组] 聚合，type=other
-  stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 少
+    - anibt          # 走实例的 aniBTGroup 接口
+    - animegarden    # 走实例的 animeGardenGroup 接口
+    - mikan          # 走实例的 mikanGroup 接口
+    - nyaa           # 关键字搜索型 RSS，按标题里的 [放流组] 聚合
+
+  stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 会少
   timeoutSeconds: 25
+  cacheMinutes: 720         # 站点数据缓存时长；0 = 不缓存
 
 rules:
-  # 正则 + 优先级，数字越小越优先；第一条命中的规则决定该候选的优先级
+  maxStandby: 3             # 每个订阅保留多少条副 RSS
+
+  # 正则 + 优先级，数字越小越优先；按声明顺序匹配，第一条命中的生效。
+  # 匹配对象 = 字幕组名 + 最近的资源标题，所以字幕类型也能排优先级。
+  # scope: main = 只参与挑主 RSS（默认）；standby = 只参与挑副 RSS；both = 两边都参与。
   primary:
-    - name: 桜都字幕组
-      match: '(?i)sakurato|桜都'
-      priority: 10
-    - name: LoliHouse
-      match: '(?i)lolihouse|萝莉屋'
-      priority: 20
-    - name: 喵萌奶茶屋
-      match: '(?i)喵萌|nyamoe'
-      priority: 30
-    - name: 北宇治字幕组
-      match: '(?i)北宇治|kitauji'
-      priority: 40
-    # 可以限定只在某个站点生效
-    - name: Nyaa 上的 ToonsHub
-      match: '(?i)toonshub'
-      priority: 50
-      site: nyaa
+    # 字幕类型优先级
+    - {name: 简日内嵌,   match: '(?i)简日|简体|CHS',        priority: 10, scope: main}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 20, scope: main}
+    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 30, scope: main}
+    # 字幕组优先级
+    - {name: 桜都字幕组, match: '(?i)sakurato|桜都',        priority: 40, scope: main}
+    - {name: LoliHouse,  match: '(?i)lolihouse|萝莉屋',     priority: 50, scope: main}
+    # 主 RSS 用字幕组、副 RSS 用放流组：给放流组规则写上 scope: standby 即可
+    - {name: 放流组,     match: '(?i)toonshub|subsplease',  priority: 10, scope: standby}
+
   # 命中即丢弃该候选
   deny:
-    - match: '合集|全集|BDRip|HEVC'
-      why: 不要合集/高压
-  maxStandby: 3   # 每个订阅保留多少条副 RSS
+    - {match: '合集|全集|BDRip', why: 不要合集}
 
-# 多个 ANI-RSS 实例：同一套规则会同时打点到所有实例
 instances:
   - name: 主库
     baseUrl: https://ass.example.com/
-    apiKey: ${ASSM_KEY_MAIN}     # 支持 ${ENV} 写法，避免明文落盘
+    apiKey: ${ANISYNC_KEY_MAIN}     # 支持 ${ENV} 写法，避免明文落盘
   - name: 备用库
     baseUrl: http://192.168.1.10:7789/
-    apiKey: ${ASSM_KEY_BACKUP}
-    enabled: false               # 临时停用
+    apiKey: ${ANISYNC_KEY_BACKUP}
+    enabled: false                  # 临时停用
 
 # 可选：实例里没有的番剧自动新增（默认不启用订阅，避免触发下载）
 targets: []
@@ -63,6 +61,6 @@ targets: []
 #    enable: false
 
 sync:
-  intervalMinutes: 0   # 0 = 不自动定时（托盘只提供手动「立即同步」）
-  dryRun: false
+  intervalMinutes: 0    # 后台自动爬取间隔，单位分钟；0 = 不自动
+  preview: false        # true = 只生成计划不写入，等价于命令行 --preview
   addMissing: false

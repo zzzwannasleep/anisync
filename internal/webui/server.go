@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/zzzwannasleep/assm/internal/assapi"
-	"github.com/zzzwannasleep/assm/internal/config"
-	"github.com/zzzwannasleep/assm/internal/planner"
+	"github.com/zzzwannasleep/anisync/internal/assapi"
+	"github.com/zzzwannasleep/anisync/internal/config"
+	"github.com/zzzwannasleep/anisync/internal/planner"
+	"github.com/zzzwannasleep/anisync/internal/workdir"
 )
 
 //go:embed assets/index.html
@@ -81,6 +83,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		next := &incoming
 		next.SetPath(path)
 		next.Normalize()
+		if err := next.Validate(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "配置校验失败: " + err.Error()})
+			return
+		}
 		if err := next.Save(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
@@ -106,7 +112,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	plan, err := planner.Build(ctx, cfg, planner.Options{AddMissing: cfg.Sync.AddMissing})
+	plan, err := planner.Build(ctx, cfg, planner.Options{AddMissing: cfg.Sync.AddMissing, CachePath: cachePath()})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -126,7 +132,7 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
 
-	plan, err := planner.Build(ctx, cfg, planner.Options{AddMissing: cfg.Sync.AddMissing})
+	plan, err := planner.Build(ctx, cfg, planner.Options{AddMissing: cfg.Sync.AddMissing, CachePath: cachePath()})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -182,12 +188,15 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 // handleSources 列出可用的站点适配器。
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, []map[string]string{
-		{"id": "anibt", "name": "AniBT", "note": "官方 API，字幕组维度，主推"},
-		{"id": "animegarden", "name": "AnimeGarden", "note": "API + feed.xml，字幕组维度"},
-		{"id": "mikan", "name": "Mikan", "note": "标题搜索 + 详情页反查 bgm，字幕组维度"},
-		{"id": "nyaa", "name": "Nyaa", "note": "标题搜索，按 [放流组] 聚合，type=other"},
+		{"id": "anibt", "name": "AniBT", "note": "字幕组维度，走实例的 aniBTGroup 接口"},
+		{"id": "animegarden", "name": "AnimeGarden", "note": "字幕组维度，走实例的 animeGardenGroup 接口"},
+		{"id": "mikan", "name": "Mikan", "note": "字幕组维度，走实例的 mikanGroup 接口"},
+		{"id": "nyaa", "name": "Nyaa", "note": "关键字搜索型 RSS，按标题里的 [放流组] 聚合"},
 	})
 }
+
+// cachePath 返回站点数据缓存文件路径。
+func cachePath() string { return filepath.Join(workdir.DataDir(), "cache.json") }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

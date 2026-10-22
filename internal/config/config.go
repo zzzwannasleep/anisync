@@ -1,10 +1,11 @@
-// Package config 负责 assm 的配置读写。
+// Package config 负责 AniSync 的配置读写。
 // 配置文件是唯一的真相来源：CLI、托盘、Web 设置页读写同一份 YAML。
 package config
 
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,7 +13,20 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zzzwannasleep/anisync/internal/workdir"
 )
+
+// 规则作用域：决定这条规则参与挑选主 RSS 还是副 RSS。
+const (
+	ScopeMain    = "main"
+	ScopeStandby = "standby"
+	ScopeBoth    = "both"
+)
+
+// DefaultListen 是本地设置页的默认监听地址。
+// 用五位数高位端口（49152–65535），避开常见服务端口，也不撞系统动态端口分配区。
+const DefaultListen = "127.0.0.1:51837"
 
 // Instance 是一个 ANI-RSS 实例。
 type Instance struct {
@@ -22,16 +36,33 @@ type Instance struct {
 	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
-// EnabledOr 默认启用。
+// IsEnabled 默认启用。
 func (i Instance) IsEnabled() bool { return i.Enabled == nil || *i.Enabled }
 
-// Rule 是一条字幕组/放流组规则：正则 + 优先级（数字越小越优先）。
+// Rule 是一条匹配规则：正则 + 优先级（数字越小越优先）。
+//
+// Match 会同时作用于字幕组名与最近的资源标题，因此既能排字幕组，
+// 也能排「简日内嵌 / 繁日内嵌 / 简繁日内封」这类字幕类型。
 type Rule struct {
 	Name     string `yaml:"name" json:"name"`
 	Match    string `yaml:"match" json:"match"`
 	Priority int    `yaml:"priority" json:"priority"`
 	// Site 限定只在该来源生效，空表示不限。
 	Site string `yaml:"site,omitempty" json:"site,omitempty"`
+	// Scope 决定这条规则给主 RSS 排序还是给副 RSS 排序：main / standby / both。
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+}
+
+// ScopeOr 返回规整后的作用域，缺省为主 RSS。
+func (r Rule) ScopeOr() string {
+	switch strings.ToLower(strings.TrimSpace(r.Scope)) {
+	case ScopeStandby:
+		return ScopeStandby
+	case ScopeBoth:
+		return ScopeBoth
+	default:
+		return ScopeMain
+	}
 }
 
 // DenyRule 命中即剔除该候选。
@@ -47,11 +78,16 @@ type Rules struct {
 	MaxStandby int        `yaml:"maxStandby" json:"maxStandby"`
 }
 
-// Sources 描述站点爬取优先级。
+// Sources 描述站点数据来源。
 type Sources struct {
+	// Instance 指定借用哪个实例的站点数据（mikanGroup / aniBTGroup / animeGardenGroup）；
+	// 留空时用第一个启用的实例。
+	Instance         string   `yaml:"instance,omitempty" json:"instance,omitempty"`
 	Order            []string `yaml:"order" json:"order"`
 	StopOnFirstMatch bool     `yaml:"stopOnFirstMatch" json:"stopOnFirstMatch"`
 	TimeoutSeconds   int      `yaml:"timeoutSeconds" json:"timeoutSeconds"`
+	// CacheMinutes 是站点数据的缓存时长，0 表示不缓存。
+	CacheMinutes int `yaml:"cacheMinutes" json:"cacheMinutes"`
 }
 
 // Target 是希望自动添加的番剧（实例里没有就 addAni）。
@@ -66,12 +102,13 @@ type Target struct {
 
 // Sync 是同步行为配置。
 type Sync struct {
+	// IntervalMinutes 是后台自动爬取的间隔，单位分钟；0 表示不自动。
 	IntervalMinutes int  `yaml:"intervalMinutes" json:"intervalMinutes"`
-	DryRun          bool `yaml:"dryRun" json:"dryRun"`
+	Preview         bool `yaml:"preview" json:"preview"`
 	AddMissing      bool `yaml:"addMissing" json:"addMissing"`
 }
 
-// Config 是 assm 的完整配置。
+// Config 是 AniSync 的完整配置。
 type Config struct {
 	Listen    string     `yaml:"listen" json:"listen"`
 	Proxy     string     `yaml:"proxy,omitempty" json:"proxy,omitempty"`
@@ -93,24 +130,18 @@ func (c *Config) SetPath(path string) { c.path = path }
 // Default 返回带默认值的配置。
 func Default() *Config {
 	return &Config{
-		Listen: "127.0.0.1:7788",
+		Listen: DefaultListen,
 		Sources: Sources{
 			Order:          []string{"anibt", "animegarden", "mikan", "nyaa"},
 			TimeoutSeconds: 25,
+			CacheMinutes:   720,
 		},
 		Rules: Rules{MaxStandby: 3},
-		Sync:  Sync{IntervalMinutes: 0},
 	}
 }
 
-// DefaultPath 返回默认配置路径（~/.config/assm/config.yaml，Windows 下为 %APPDATA%\assm\config.yaml）。
-func DefaultPath() string {
-	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "assm", "config.yaml")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".assm", "config.yaml")
-}
+// DefaultPath 返回默认配置路径：程序同目录下的 config.yaml。
+func DefaultPath() string { return workdir.ConfigPath() }
 
 // Load 读取配置；文件不存在时返回默认配置（path 仍指向该位置）。
 func Load(path string) (*Config, error) {
@@ -155,14 +186,14 @@ func (c *Config) expandEnv() {
 		c.Instances[i].BaseURL = expand(c.Instances[i].BaseURL)
 	}
 	if c.Proxy == "" {
-		c.Proxy = os.Getenv("ASSM_PROXY")
+		c.Proxy = os.Getenv("ANISYNC_PROXY")
 	}
 }
 
 // Normalize 补齐默认值并规整 URL。
 func (c *Config) Normalize() {
 	d := Default()
-	if c.Listen == "" {
+	if !validListen(c.Listen) {
 		c.Listen = d.Listen
 	}
 	if len(c.Sources.Order) == 0 {
@@ -171,8 +202,14 @@ func (c *Config) Normalize() {
 	if c.Sources.TimeoutSeconds <= 0 {
 		c.Sources.TimeoutSeconds = d.Sources.TimeoutSeconds
 	}
+	if c.Sources.CacheMinutes < 0 {
+		c.Sources.CacheMinutes = 0
+	}
 	if c.Rules.MaxStandby <= 0 {
 		c.Rules.MaxStandby = d.Rules.MaxStandby
+	}
+	for i := range c.Rules.Primary {
+		c.Rules.Primary[i].Scope = c.Rules.Primary[i].ScopeOr()
 	}
 	for i := range c.Instances {
 		c.Instances[i].BaseURL = NormalizeBaseURL(c.Instances[i].BaseURL)
@@ -184,6 +221,28 @@ func (c *Config) Normalize() {
 		c.Targets[i].BgmID = strings.TrimSpace(c.Targets[i].BgmID)
 		c.Targets[i].MikanID = strings.TrimSpace(c.Targets[i].MikanID)
 	}
+}
+
+// validListen 校验监听地址：必须是 host:port，且端口合法。
+func validListen(addr string) bool {
+	_, port, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || port == "" {
+		return false
+	}
+	return strings.Trim(port, "0123456789") == "" && port != "0"
+}
+
+// SiteInstance 返回借用站点数据的实例名：优先用显式配置，否则取第一个启用的实例。
+func (c *Config) SiteInstance() string {
+	if name := strings.TrimSpace(c.Sources.Instance); name != "" {
+		return name
+	}
+	for _, instance := range c.Instances {
+		if instance.IsEnabled() {
+			return instance.Name
+		}
+	}
+	return ""
 }
 
 // NormalizeBaseURL 与 ANI-RSS 的 normalizeBaseUrl 保持一致：只保留协议+主机+代理子路径，末尾补 /。
@@ -227,12 +286,22 @@ func (c *Config) Validate() error {
 		}
 		seen[inst.Name] = true
 	}
+	if name := strings.TrimSpace(c.Sources.Instance); name != "" {
+		if _, ok := c.InstanceByName(name); !ok {
+			return fmt.Errorf("sources.instance 指向的实例不存在: %s", name)
+		}
+	}
 	for _, r := range c.Rules.Primary {
 		if r.Match == "" {
 			continue
 		}
 		if _, err := regexp.Compile(r.Match); err != nil {
 			return fmt.Errorf("规则 %q 的正则不合法: %w", r.Name, err)
+		}
+		switch strings.ToLower(strings.TrimSpace(r.Scope)) {
+		case "", ScopeMain, ScopeStandby, ScopeBoth:
+		default:
+			return fmt.Errorf("规则 %q 的 scope 只能是 main / standby / both，实际 %q", r.Name, r.Scope)
 		}
 	}
 	for _, r := range c.Rules.Deny {
@@ -249,14 +318,14 @@ func (c *Config) Save() error {
 		c.path = DefaultPath()
 	}
 	c.Normalize()
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
 		return err
 	}
 	out, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-	header := "# assm 配置：多 ANI-RSS 实例 + 主副 RSS 自动打点\n" +
+	header := "# AniSync 配置：多 ANI-RSS 实例 + 主副 RSS 自动打点\n" +
 		"# apiKey 支持 ${ENV_VAR} 写法，避免明文落盘。\n"
 	if err := os.WriteFile(c.path, append([]byte(header), out...), 0o600); err != nil {
 		return err

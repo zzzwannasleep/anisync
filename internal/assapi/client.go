@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zzzwannasleep/assm/internal/httpx"
+	"github.com/zzzwannasleep/anisync/internal/httpx"
 )
 
 // Client 绑定一个实例。
@@ -106,12 +106,24 @@ func (c *Client) Post(ctx context.Context, endpoint string, query url.Values, bo
 // Ani 用 map 承载，避免漏字段：setAni 是全量覆盖语义，必须把原对象改完再整份回传。
 type Ani = map[string]any
 
-// Group 是字幕组/放送组。
+// Group 是字幕组/放流组。
+// 三个站点接口返回的字段名各不相同（mikan 用 label，anibt/animegarden 用 name），
+// 这里统一收口；Items 里的标题会参与规则匹配，用来排「简日内嵌 / 繁日内封」这类字幕类型优先级。
 type Group struct {
-	Label  string `json:"label"`
-	Name   string `json:"name"`
-	RSS    string `json:"rss"`
-	BgmURL string `json:"bgmUrl"`
+	Label  string      `json:"label"`
+	Name   string      `json:"name"`
+	Slug   string      `json:"slug"`
+	RSS    string      `json:"rss"`
+	BgmURL string      `json:"bgmUrl"`
+	Items  []GroupItem `json:"items"`
+	// Total 是该组的资源总数。缓存只保留少量标题样本，热度要靠它才不丢。
+	Total int `json:"total,omitempty"`
+}
+
+// GroupItem 是字幕组下的一条资源，只取标题。
+type GroupItem struct {
+	Title    string   `json:"title"`
+	Language []string `json:"language"`
 }
 
 // DisplayName 返回可读名字。
@@ -120,6 +132,13 @@ func (g Group) DisplayName() string {
 		return g.Label
 	}
 	return g.Name
+}
+
+// MikanItem 是 mikan 搜索结果里的番剧条目。
+type MikanItem struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	BgmID string `json:"bgmId"`
 }
 
 // About 测试连接。
@@ -223,4 +242,28 @@ func (c *Client) groups(ctx context.Context, endpoint string, query url.Values) 
 		return nil, fmt.Errorf("%s 响应解析失败: %w", endpoint, err)
 	}
 	return groups, nil
+}
+
+// MikanSearch 按标题搜索 mikan 番剧，返回带番剧页地址与 bgmId 的条目。
+// 用来在订阅不是 mikan 来源时，反查出 mikan 番剧页（mikanGroup 需要的是页面地址）。
+func (c *Client) MikanSearch(ctx context.Context, text string) ([]MikanItem, error) {
+	query := url.Values{}
+	query.Set("text", text)
+	result, err := c.Post(ctx, "mikan", query, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var data struct {
+		Weeks []struct {
+			Items []MikanItem `json:"items"`
+		} `json:"weeks"`
+	}
+	if err := json.Unmarshal(result.Data, &data); err != nil {
+		return nil, fmt.Errorf("mikan 搜索响应解析失败: %w", err)
+	}
+	items := make([]MikanItem, 0, len(data.Weeks))
+	for _, week := range data.Weeks {
+		items = append(items, week.Items...)
+	}
+	return items, nil
 }

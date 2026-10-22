@@ -1,9 +1,14 @@
-// Package rules 实现「正则 + 优先级」的字幕组/放流组打分。
+// Package rules 实现「正则 + 优先级」的打分，主 RSS 与副 RSS 可以各用一套规则。
 //
 // 语义：
 //   - deny 命中 -> 直接剔除；
-//   - primary 规则按配置顺序匹配，第一条命中的决定优先级（数字越小越优先）；
-//   - 没命中任何规则的候选排在所有命中规则的候选之后，同优先级时按站点优先级、再按组名排序。
+//   - 规则按声明顺序匹配，第一条命中的决定优先级（数字越小越优先）；
+//   - scope 决定这条规则参与挑主 RSS（main）、副 RSS（standby），还是两边都参与（both）；
+//   - 匹配对象是「字幕组名 + 最近的资源标题」，所以同一套机制既能排字幕组，
+//     也能排简日内嵌 / 繁日内嵌 / 简繁日内封这类字幕类型；
+//   - 没命中任何规则的候选排在命中规则的候选之后，同优先级时按热度、站点顺序、名称兜底。
+//
+// 典型用法：主 RSS 用字幕组规则，副 RSS 用放流组规则 —— 给放流组规则写上 scope: standby 即可。
 package rules
 
 import (
@@ -12,11 +17,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zzzwannasleep/assm/internal/source"
+	"github.com/zzzwannasleep/anisync/internal/source"
 )
 
 // UnmatchedPriority 是未命中规则候选的基准优先级。
 const UnmatchedPriority = 1000
+
+// 规则作用域取值。
+const (
+	ScopeMain    = "main"
+	ScopeStandby = "standby"
+	ScopeBoth    = "both"
+)
 
 type compiledRule struct {
 	name     string
@@ -27,7 +39,8 @@ type compiledRule struct {
 
 // Engine 是编译好的规则引擎。
 type Engine struct {
-	primary    []compiledRule
+	main       []compiledRule
+	standby    []compiledRule
 	deny       []compiledRule
 	maxStandby int
 }
@@ -38,6 +51,7 @@ type Rule struct {
 	Match    string
 	Priority int
 	Site     string
+	Scope    string
 }
 
 // DenyRule 是排除规则。
@@ -60,12 +74,21 @@ func New(primary []Rule, deny []DenyRule, maxStandby int) (*Engine, error) {
 		if err != nil {
 			return nil, fmt.Errorf("规则 %q 正则不合法: %w", rule.Name, err)
 		}
-		engine.primary = append(engine.primary, compiledRule{
+		compiled := compiledRule{
 			name:     rule.Name,
 			re:       re,
 			priority: rule.Priority,
 			site:     strings.ToLower(strings.TrimSpace(rule.Site)),
-		})
+		}
+		switch strings.ToLower(strings.TrimSpace(rule.Scope)) {
+		case ScopeStandby:
+			engine.standby = append(engine.standby, compiled)
+		case ScopeBoth:
+			engine.main = append(engine.main, compiled)
+			engine.standby = append(engine.standby, compiled)
+		default:
+			engine.main = append(engine.main, compiled)
+		}
 	}
 	for _, rule := range deny {
 		if strings.TrimSpace(rule.Match) == "" {
@@ -83,13 +106,19 @@ func New(primary []Rule, deny []DenyRule, maxStandby int) (*Engine, error) {
 // MaxStandby 返回副 RSS 上限。
 func (e *Engine) MaxStandby() int { return e.maxStandby }
 
-// Match 返回命中的规则名与优先级；未命中时 ok=false。
+// Match 返回主 RSS 作用域下命中的规则名与优先级；未命中时 ok=false。
 func (e *Engine) Match(candidate source.Candidate) (name string, priority int, ok bool) {
-	text := candidate.Label
-	if text == "" {
-		text = candidate.Subgroup
-	}
-	for _, rule := range e.primary {
+	return matchIn(e.main, candidate)
+}
+
+// StandbyMatch 返回副 RSS 作用域下命中的规则名与优先级。
+func (e *Engine) StandbyMatch(candidate source.Candidate) (name string, priority int, ok bool) {
+	return matchIn(e.standby, candidate)
+}
+
+func matchIn(list []compiledRule, candidate source.Candidate) (string, int, bool) {
+	text := matchText(candidate)
+	for _, rule := range list {
 		if rule.site != "" && !strings.EqualFold(rule.site, candidate.Site) {
 			continue
 		}
@@ -100,9 +129,29 @@ func (e *Engine) Match(candidate source.Candidate) (name string, priority int, o
 	return "", UnmatchedPriority, false
 }
 
+// matchText 是规则的匹配对象：字幕组名 + 最近的资源标题。
+// 字幕类型（简日/繁日/内嵌/内封）只出现在标题里，必须一起参与匹配。
+func matchText(candidate source.Candidate) string {
+	if len(candidate.Titles) == 0 {
+		if candidate.Label != "" {
+			return candidate.Label
+		}
+		return candidate.Subgroup
+	}
+	var b strings.Builder
+	b.WriteString(candidate.Label)
+	b.WriteString(" ")
+	b.WriteString(candidate.Subgroup)
+	for _, title := range candidate.Titles {
+		b.WriteString(" ")
+		b.WriteString(title)
+	}
+	return b.String()
+}
+
 // Denied 判断是否被排除。
 func (e *Engine) Denied(candidate source.Candidate) (bool, string) {
-	text := candidate.Label + " " + candidate.Subgroup + " " + candidate.URL
+	text := matchText(candidate) + " " + candidate.URL
 	for _, rule := range e.deny {
 		if rule.re.MatchString(text) {
 			return true, rule.name
@@ -111,8 +160,8 @@ func (e *Engine) Denied(candidate source.Candidate) (bool, string) {
 	return false, ""
 }
 
-// Rank 过滤 + 排序 + 回填优先级，返回排好序的候选。
-// 排序键：规则优先级 -> 站点热度（发布/资源数，降序）-> 站点顺序 -> 组名。
+// Rank 过滤 + 按主 RSS 规则排序 + 回填两套优先级，返回排好序的候选。
+// 排序键：主 RSS 规则优先级 -> 热度（发布条数，降序）-> 站点顺序 -> 组名。
 // 排序后按「组名」去重：同一个字幕组在多个站点的镜像只保留最优的那条，
 // 这样副 RSS 列表里是不同字幕组，而不是同一个组的多个镜像。
 func (e *Engine) Rank(candidates []source.Candidate) []source.Candidate {
@@ -121,10 +170,17 @@ func (e *Engine) Rank(candidates []source.Candidate) []source.Candidate {
 		if denied, _ := e.Denied(candidate); denied {
 			continue
 		}
-		name, priority, ok := e.Match(candidate)
-		candidate.Priority = priority
-		if ok {
+		if name, priority, ok := e.Match(candidate); ok {
+			candidate.Priority = priority
 			candidate.RuleName = name
+		} else {
+			candidate.Priority = UnmatchedPriority
+		}
+		if name, priority, ok := e.StandbyMatch(candidate); ok {
+			candidate.StandbyPriority = priority
+			candidate.StandbyRuleName = name
+		} else {
+			candidate.StandbyPriority = UnmatchedPriority
 		}
 		out = append(out, candidate)
 	}
@@ -132,13 +188,7 @@ func (e *Engine) Rank(candidates []source.Candidate) []source.Candidate {
 		if out[i].Priority != out[j].Priority {
 			return out[i].Priority < out[j].Priority
 		}
-		if out[i].Weight != out[j].Weight {
-			return out[i].Weight > out[j].Weight
-		}
-		if out[i].SiteOrder != out[j].SiteOrder {
-			return out[i].SiteOrder < out[j].SiteOrder
-		}
-		return out[i].Label < out[j].Label
+		return less(out[i], out[j])
 	})
 
 	seen := map[string]bool{}
@@ -155,6 +205,37 @@ func (e *Engine) Rank(candidates []source.Candidate) []source.Candidate {
 		deduped = append(deduped, candidate)
 	}
 	return deduped
+}
+
+// Standby 从主 RSS 排序结果里挑副 RSS。
+//
+// 传入的是已经去重、且主 RSS 已取走首项的候选。这里按副 RSS 规则重新排序：
+// 命中 standby 规则的排前面，没命中的按热度/站点/名称兜底，最后截到 maxStandby 条。
+// 因此「主 RSS 是字幕组、副 RSS 是放流组」只需要给放流组规则写上 scope: standby。
+func (e *Engine) Standby(rest []source.Candidate) []source.Candidate {
+	out := make([]source.Candidate, len(rest))
+	copy(out, rest)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].StandbyPriority != out[j].StandbyPriority {
+			return out[i].StandbyPriority < out[j].StandbyPriority
+		}
+		return less(out[i], out[j])
+	})
+	if len(out) > e.maxStandby {
+		out = out[:e.maxStandby]
+	}
+	return out
+}
+
+// less 是同优先级下的兜底排序：热度降序 -> 站点顺序 -> 名称。
+func less(a, b source.Candidate) bool {
+	if a.Weight != b.Weight {
+		return a.Weight > b.Weight
+	}
+	if a.SiteOrder != b.SiteOrder {
+		return a.SiteOrder < b.SiteOrder
+	}
+	return a.Label < b.Label
 }
 
 var labelNoise = regexp.MustCompile(`[\s\-_·・,，。.()（）\[\]【】]+`)

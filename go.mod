@@ -1,4 +1,4 @@
-module github.com/zzzwannasleep/assm
+module github.com/zzzwannasleep/anisync
 
 go 1.24
 

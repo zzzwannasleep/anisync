@@ -14,22 +14,22 @@ arch="${3:-$(uname -m)}"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d)"
-app="$work/assm.app"
+app="$work/AniSync.app"
 trap 'rm -rf "$work"' EXIT
 
 mkdir -p "$app/Contents/MacOS"
-cp "$binary" "$app/Contents/MacOS/assm"
-chmod +x "$app/Contents/MacOS/assm"
+cp "$binary" "$app/Contents/MacOS/AniSync"
+chmod +x "$app/Contents/MacOS/AniSync"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>assm</string>
-    <key>CFBundleDisplayName</key><string>assm</string>
-    <key>CFBundleIdentifier</key><string>io.github.zzzwannasleep.assm</string>
-    <key>CFBundleExecutable</key><string>assm</string>
+    <key>CFBundleName</key><string>AniSync</string>
+    <key>CFBundleDisplayName</key><string>AniSync</string>
+    <key>CFBundleIdentifier</key><string>io.github.zzzwannasleep.anisync</string>
+    <key>CFBundleExecutable</key><string>AniSync</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleVersion</key><string>${version}</string>
     <key>CFBundleShortVersionString</key><string>${version}</string>
@@ -41,10 +41,10 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 
 mkdir -p "$root/dist"
-out="$root/dist/assm-${version}-macos-${arch}.app.zip"
+out="$root/dist/AniSync-${version}-macos-${arch}.app.zip"
 rm -f "$out"
-(cd "$work" && zip -qry "$out" assm.app)
+(cd "$work" && zip -qry "$out" AniSync.app)
 
 echo "已生成 $out"
 echo "提示：未签名的 .app 首次打开会被 Gatekeeper 拦截，右键「打开」或在终端执行："
-echo "  xattr -dr com.apple.quarantine /Applications/assm.app"
+echo "  xattr -dr com.apple.quarantine /Applications/AniSync.app"

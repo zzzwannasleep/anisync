@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zzzwannasleep/assm/internal/config"
-	"github.com/zzzwannasleep/assm/internal/source"
+	"github.com/zzzwannasleep/anisync/internal/assapi"
+	"github.com/zzzwannasleep/anisync/internal/config"
+	"github.com/zzzwannasleep/anisync/internal/source"
 )
 
 // cmdProbe 单站点探针：只跑一个来源，把候选和错误原样打出来，用来排查「为什么没匹配到」。
 func cmdProbe(args []string) int {
 	fs := flag.NewFlagSet("probe", flag.ExitOnError)
-	path := fs.String("config", "", "配置文件路径（只用其中的 proxy）")
+	path := fs.String("config", "", "配置文件路径（用其中的 proxy 与站点数据来源实例）")
 	site := fs.String("site", "mikan", "站点: anibt / animegarden / mikan / nyaa")
 	bgm := fs.String("bgm", "", "bgm.tv 条目 id")
 	mikanID := fs.String("mikan", "", "mikan bangumi id")
@@ -26,25 +27,39 @@ func cmdProbe(args []string) int {
 		return fail(err)
 	}
 	timeout := time.Duration(cfg.Sources.TimeoutSeconds) * time.Second
-	client, err := newProbeClient(cfg.Proxy, timeout)
+
+	httpClient, err := newProbeClient(cfg.Proxy, timeout)
 	if err != nil {
 		return fail(err)
+	}
+
+	var siteClient *assapi.Client
+	if name := cfg.SiteInstance(); name != "" {
+		instance, ok := cfg.InstanceByName(name)
+		if !ok {
+			return fail(fmt.Errorf("找不到站点数据来源实例 %s", name))
+		}
+		siteClient, err = assapi.New(instance.BaseURL, instance.APIKey, cfg.Proxy, timeout)
+		if err != nil {
+			return fail(err)
+		}
 	}
 
 	query := source.Query{BgmID: *bgm, MikanID: *mikanID, Title: *title, JPTitle: *jp, NyaaQuery: *jp}
 	fmt.Printf("probe %s  bgmId=%q mikanId=%q title=%q jp=%q\n", *site, query.BgmID, query.MikanID, query.Title, query.JPTitle)
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*4)
 	defer cancel()
 
-	registry := source.NewRegistry(client, timeout, []string{*site})
+	registry := source.NewRegistry(siteClient, httpClient, timeout, []string{*site}, nil)
 	for _, result := range registry.Collect(ctx, query, false) {
 		if result.Err != nil {
 			fmt.Printf("✘ [%s] %v\n", result.Site, result.Err)
 		}
 		fmt.Printf("[%s] %d 个候选\n", result.Site, len(result.Candidates))
 		for _, candidate := range result.Candidates {
-			fmt.Printf("  - %-24s weight=%-4d %s\n", candidate.Label, candidate.Weight, candidate.URL)
+			fmt.Printf("  - %-24s 热度=%-4d 标题样本=%-3d %s\n",
+				candidate.Label, candidate.Weight, len(candidate.Titles), candidate.URL)
 		}
 	}
 	return 0

@@ -1,7 +1,7 @@
-// Command assm 是多 ANI-RSS 实例的主副 RSS 自动打点工具。
+// Command AniSync 是多 ANI-RSS 实例的主副 RSS 自动打点工具。
 //
-// 同一个二进制既是 CLI（Linux/Windows/macOS），也是托盘程序（Windows 原生托盘），
-// 还内置了一个本地 Web 设置页（默认 http://127.0.0.1:7788）。
+// 同一个二进制既是 CLI（Linux / Windows / macOS），也是托盘程序（Windows 通知区域、macOS 菜单栏），
+// 还内置一个本地 Web 设置页。所有运行期文件都放在程序同目录，删掉文件夹即卸载干净。
 package main
 
 import (
@@ -12,19 +12,24 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/zzzwannasleep/assm/internal/assapi"
-	"github.com/zzzwannasleep/assm/internal/config"
-	"github.com/zzzwannasleep/assm/internal/httpx"
-	"github.com/zzzwannasleep/assm/internal/planner"
-	"github.com/zzzwannasleep/assm/internal/tray"
-	"github.com/zzzwannasleep/assm/internal/webui"
+	"github.com/zzzwannasleep/anisync/internal/assapi"
+	"github.com/zzzwannasleep/anisync/internal/config"
+	"github.com/zzzwannasleep/anisync/internal/httpx"
+	"github.com/zzzwannasleep/anisync/internal/planner"
+	"github.com/zzzwannasleep/anisync/internal/tray"
+	"github.com/zzzwannasleep/anisync/internal/webui"
+	"github.com/zzzwannasleep/anisync/internal/workdir"
 )
 
+// version 由构建脚本通过 -ldflags "-X main.version=..." 注入。
 var version = "0.1.0"
+
+const appName = "AniSync"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -47,7 +52,7 @@ func main() {
 	case "init":
 		os.Exit(cmdInit(os.Args[2:]))
 	case "version", "-v", "--version":
-		fmt.Printf("assm %s\n", version)
+		fmt.Printf("%s %s\n", appName, version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -58,23 +63,28 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`assm —— 多 ANI-RSS 实例的主副 RSS 自动打点
+	fmt.Print(appName + ` —— 多 ANI-RSS 实例的主副 RSS 自动打点
 
 用法:
-  assm init                    生成默认配置文件
-  assm check                   校验配置并测试每个实例连通性
-  assm plan  [--json]          只生成打点计划（不写任何东西）
-  assm sync  [--dry-run] [-y]  生成并执行计划
-  assm serve [--listen addr]   启动本地 Web 设置页
-  assm tray                    常驻托盘（Windows 原生托盘；其它平台打印提示）
+  ` + appName + ` init                       生成默认配置文件
+  ` + appName + ` check                      校验配置并测试每个实例连通性
+  ` + appName + ` plan   [--json]            只生成打点计划（不写任何东西）
+  ` + appName + ` sync   [--preview] [-y]    生成并执行计划
+  ` + appName + ` serve  [--listen addr]     启动本地 Web 设置页
+  ` + appName + ` tray                       常驻托盘 + 后台按配置间隔自动爬取
+  ` + appName + ` probe  --site mikan ...    单站点探针，排查为什么没匹配到
 
 通用参数:
-  --config <path>   配置文件路径（默认 ` + config.DefaultPath() + `）
-  --instance <name> 只处理指定实例
+  --config <path>     配置文件路径（默认 ` + config.DefaultPath() + `）
+  --instance <name>   只处理指定实例
 
 环境变量:
-  ASSM_PROXY        代理地址，例如 http://127.0.0.1:7890
+  ANISYNC_PROXY       代理地址，例如 http://127.0.0.1:7890
   配置里的 apiKey 支持 ${ENV_NAME} 写法
+
+运行期文件（都放在程序同目录，不往别处写）:
+  config.yaml         配置
+  data/cache.json     站点数据缓存
 `)
 }
 
@@ -96,7 +106,7 @@ func cmdInit(args []string) int {
 	if err := cfg.Save(); err != nil {
 		return fail(err)
 	}
-	fmt.Printf("已生成配置: %s\n接下来编辑它，填入实例和 apiKey，然后跑 `assm check`。\n", cfg.Path())
+	fmt.Printf("已生成配置: %s\n接下来编辑它，填入实例和 apiKey，然后跑 `%s check`。\n", cfg.Path(), appName)
 	return 0
 }
 
@@ -114,7 +124,8 @@ func cmdCheck(args []string) int {
 		fmt.Printf("✘ 配置校验失败: %v\n", err)
 		return 1
 	}
-	fmt.Printf("✔ 配置校验通过（%d 个实例，站点顺序 %s）\n", len(cfg.Instances), strings.Join(cfg.Sources.Order, " > "))
+	fmt.Printf("✔ 配置校验通过（%d 个实例，站点顺序 %s，站点数据取自 %s）\n",
+		len(cfg.Instances), strings.Join(cfg.Sources.Order, " > "), cfg.SiteInstance())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -167,7 +178,12 @@ func cmdPlan(args []string) int {
 	defer cancel()
 
 	start := time.Now()
-	plan, err := planner.Build(ctx, cfg, planner.Options{OnlyInstance: *instance, AddMissing: *addMissing, Limit: *limit})
+	plan, err := planner.Build(ctx, cfg, planner.Options{
+		OnlyInstance: *instance,
+		AddMissing:   *addMissing,
+		Limit:        *limit,
+		CachePath:    cachePath(),
+	})
 	if err != nil {
 		return fail(err)
 	}
@@ -185,7 +201,7 @@ func cmdSync(args []string) int {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	path := fs.String("config", "", "配置文件路径")
 	instance := fs.String("instance", "", "只处理指定实例")
-	dryRun := fs.Bool("dry-run", false, "只预览不写入")
+	preview := fs.Bool("preview", false, "只预览，不写入")
 	yes := fs.Bool("y", false, "跳过确认")
 	addMissing := fs.Bool("add-missing", false, "包含需要新增的订阅")
 	limit := fs.Int("limit", 0, "每个实例最多处理多少条订阅（调试用）")
@@ -207,6 +223,7 @@ func cmdSync(args []string) int {
 		OnlyInstance: *instance,
 		AddMissing:   *addMissing || cfg.Sync.AddMissing,
 		Limit:        *limit,
+		CachePath:    cachePath(),
 	})
 	if err != nil {
 		return fail(err)
@@ -218,12 +235,12 @@ func cmdSync(args []string) int {
 		fmt.Println("\n没有需要写入的变更。")
 		return 0
 	}
-	if *dryRun || cfg.Sync.DryRun {
-		fmt.Printf("\n[dry-run] 有 %d 条变更未执行。\n", writable)
+	if *preview || cfg.Sync.Preview {
+		fmt.Printf("\n预览：%d 条变更未写入。去掉 --preview 并加 -y 即可执行。\n", writable)
 		return 0
 	}
 	if !*yes {
-		fmt.Printf("\n将写入 %d 条变更到 ANI-RSS。加 -y 直接执行，或加 --dry-run 只预览。\n", writable)
+		fmt.Printf("\n将写入 %d 条变更到 ANI-RSS。加 -y 直接执行，或加 --preview 只预览。\n", writable)
 		return 1
 	}
 
@@ -253,7 +270,7 @@ func cmdServe(args []string) int {
 		addr = cfg.Listen
 	}
 	server := webui.New(cfg)
-	fmt.Printf("assm %s 设置页: http://%s\n配置文件: %s\n", version, addr, cfg.Path())
+	fmt.Printf("%s %s 设置页: http://%s\n配置文件: %s\n", appName, version, addr, cfg.Path())
 	if err := server.ListenAndServe(addr); err != nil {
 		return fail(err)
 	}
@@ -283,7 +300,10 @@ func cmdTray(args []string) int {
 	syncOnce := func() (string, error) {
 		syncCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
-		plan, err := planner.Build(syncCtx, cfg, planner.Options{AddMissing: cfg.Sync.AddMissing})
+		plan, err := planner.Build(syncCtx, cfg, planner.Options{
+			AddMissing: cfg.Sync.AddMissing,
+			CachePath:  cachePath(),
+		})
 		if err != nil {
 			return "", err
 		}
@@ -294,7 +314,7 @@ func cmdTray(args []string) int {
 		return fmt.Sprintf("更新 %d 条，新增 %d 条，失败 %d 条", updated, added, len(errs)), nil
 	}
 
-	// 定时同步：sync.intervalMinutes > 0 时生效
+	// 后台自动爬取：sync.intervalMinutes > 0 时生效，单位分钟
 	if cfg.Sync.IntervalMinutes > 0 {
 		go func() {
 			ticker := time.NewTicker(time.Duration(cfg.Sync.IntervalMinutes) * time.Minute)
@@ -306,14 +326,14 @@ func cmdTray(args []string) int {
 				case <-ticker.C:
 					message, err := syncOnce()
 					if err != nil {
-						fmt.Fprintf(os.Stderr, "[定时同步] 失败: %v\n", err)
+						fmt.Fprintf(os.Stderr, "[自动同步] 失败: %v\n", err)
 						continue
 					}
-					fmt.Printf("[定时同步] %s\n", message)
+					fmt.Printf("[自动同步] %s\n", message)
 				}
 			}
 		}()
-		fmt.Printf("已开启定时同步：每 %d 分钟一次\n", cfg.Sync.IntervalMinutes)
+		fmt.Printf("已开启后台自动同步：每 %d 分钟爬取一次\n", cfg.Sync.IntervalMinutes)
 	}
 
 	signals := make(chan os.Signal, 1)
@@ -325,7 +345,7 @@ func cmdTray(args []string) int {
 	}()
 
 	return tray.Run(tray.Options{
-		Title:      "assm",
+		Title:      appName,
 		ConfigPath: cfg.Path(),
 		Settings:   "http://" + cfg.Listen,
 		Sync:       syncOnce,
@@ -335,6 +355,7 @@ func cmdTray(args []string) int {
 // ---------- 输出 ----------
 
 func printPlan(plan *planner.Plan, elapsed time.Duration) {
+	fmt.Printf("站点数据取自实例：%s\n", plan.SiteInstance)
 	fmt.Println("┌─ 站点爬取 ─────────────────────────────────────────")
 	for _, site := range plan.Sites {
 		status := fmt.Sprintf("%d 个候选", site.Candidates)
@@ -406,6 +427,11 @@ func truncate(s string, max int) string {
 func fail(err error) int {
 	fmt.Fprintf(os.Stderr, "✘ %v\n", err)
 	return 1
+}
+
+// cachePath 返回站点数据缓存文件路径（程序同目录的 data/ 下）。
+func cachePath() string {
+	return filepath.Join(workdir.DataDir(), "cache.json")
 }
 
 // newProbeClient 给 probe 命令用的 HTTP 客户端。

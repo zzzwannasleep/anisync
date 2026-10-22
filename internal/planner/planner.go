@@ -13,10 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zzzwannasleep/assm/internal/assapi"
-	"github.com/zzzwannasleep/assm/internal/config"
-	"github.com/zzzwannasleep/assm/internal/rules"
-	"github.com/zzzwannasleep/assm/internal/source"
+	"github.com/zzzwannasleep/anisync/internal/assapi"
+	"github.com/zzzwannasleep/anisync/internal/cache"
+	"github.com/zzzwannasleep/anisync/internal/config"
+	"github.com/zzzwannasleep/anisync/internal/rules"
+	"github.com/zzzwannasleep/anisync/internal/source"
 )
 
 // Options 控制计划生成。
@@ -25,7 +26,8 @@ type Options struct {
 	AddMissing   bool   // 实例里没有的 target 是否自动添加
 	MaxStandby   int
 	Concurrency  int
-	Limit        int // 每个实例最多处理多少条订阅（调试用，0 表示不限）
+	Limit        int    // 每个实例最多处理多少条订阅（调试用，0 表示不限）
+	CachePath    string // 站点数据缓存文件；留空则不缓存
 }
 
 // Change 是一条字段级差异。
@@ -55,6 +57,8 @@ type Plan struct {
 	Actions []Action        `json:"actions"`
 	Sites   []SiteSummary   `json:"sites"`
 	Skipped []SkippedReason `json:"skipped"`
+	// SiteInstance 是本次借用站点数据的实例名。
+	SiteInstance string `json:"siteInstance,omitempty"`
 }
 
 // SiteSummary 记录每个站点在本次计划里的产出，便于排查「为什么没有候选」。
@@ -87,13 +91,22 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 		return nil, err
 	}
 
-	client, err := newClient(cfg, "")
+	// 站点数据统一由某一个实例提供：它怎么认这些站点，我们就怎么认
+	siteClient, siteInstance, err := siteDataClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	registry := source.NewRegistry(client.HTTP, timeoutOf(cfg), cfg.Sources.Order)
+	httpClient, err := newClient(cfg, "")
+	if err != nil {
+		return nil, err
+	}
 
-	plan := &Plan{}
+	store := cache.Open(opts.CachePath, time.Duration(cfg.Sources.CacheMinutes)*time.Minute)
+	defer func() { _ = store.Flush() }()
+
+	registry := source.NewRegistry(siteClient, httpClient.HTTP, timeoutOf(cfg), cfg.Sources.Order, store)
+
+	plan := &Plan{SiteInstance: siteInstance}
 	// 同一番剧在多个实例里重复出现时只爬一次
 	candidateCache := map[string][]source.Candidate{}
 	var cacheMu sync.Mutex
@@ -173,10 +186,15 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 				if hasTarget(results, instance.Name, target) {
 					continue
 				}
-				action := planTarget(ctx, cfg, engine, registry, instance, target, opts, candidateCache, &cacheMu)
-				if action != nil {
-					results = append(results, *action)
+				action := planTarget(ctx, cfg, engine, registry, instance, target, candidateCache, &cacheMu)
+				if action == nil {
+					continue
 				}
+				if action.Kind == "error" {
+					skipped = append(skipped, SkippedReason{Instance: instance.Name, Title: target.Title, Reason: action.Reason})
+					continue
+				}
+				results = append(results, *action)
 			}
 		}
 	}
@@ -230,10 +248,7 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 	}
 
 	primary := ranked[0]
-	standby := ranked[1:]
-	if len(standby) > engine.MaxStandby() {
-		standby = standby[:engine.MaxStandby()]
-	}
+	standby := engine.Standby(ranked[1:])
 
 	changes := diff(ani, primary, standby)
 	if len(changes) == 0 {
@@ -250,43 +265,54 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 }
 
 func planTarget(ctx context.Context, cfg *config.Config, engine *rules.Engine, registry *source.Registry,
-	instance config.Instance, target config.Target, opts Options, cache map[string][]source.Candidate, cacheMu *sync.Mutex) *Action {
+	instance config.Instance, target config.Target, cache map[string][]source.Candidate, cacheMu *sync.Mutex) *Action {
 
-	query := source.Query{BgmID: target.BgmID, MikanID: target.MikanID, Title: target.Title}
+	query := source.Query{BgmID: target.BgmID, MikanID: target.MikanID, Title: target.Title, NyaaQuery: target.Title}
 	results := registry.Collect(ctx, query, cfg.Sources.StopOnFirstMatch)
 	ranked := engine.Rank(source.AllCandidates(results))
 	if len(ranked) == 0 {
 		return nil
 	}
 	primary := ranked[0]
-	standby := ranked[1:]
-	if len(standby) > engine.MaxStandby() {
-		standby = standby[:engine.MaxStandby()]
-	}
+	standby := engine.Standby(ranked[1:])
+
 	enable := false
 	if target.Enable != nil {
 		enable = *target.Enable
 	}
-	body := map[string]any{
+
+	// 让实例自己解析这个 RSS：标题、bgmUrl、季集、字幕组都由 ANI-RSS 决定，
+	// 我们只提供 RSS 地址、字幕组、副 RSS 与启用开关，省得在本地猜它的字段规则。
+	client, err := newClient(cfg, instance.Name)
+	if err != nil {
+		return &Action{Instance: instance.Name, Title: target.Title, Kind: "error", Reason: err.Error()}
+	}
+	draft, err := client.RssToAni(ctx, map[string]any{
 		"url":            primary.URL,
-		"title":          firstNonEmpty(target.Title, primary.Label),
-		"subgroup":       primary.Subgroup,
 		"type":           primary.Type,
+		"subgroup":       primary.Subgroup,
 		"bgmUrl":         firstNonEmpty(primary.BgmURL, bgmURLOfID(target.BgmID)),
-		"season":         1,
-		"offset":         0,
 		"enable":         enable,
 		"standbyRssList": standbyList(standby),
-		"match":          []any{},
-		"exclude":        []any{},
+	})
+	if err != nil {
+		return &Action{Instance: instance.Name, Title: target.Title, Kind: "error", Reason: "rssToAni 解析失败: " + err.Error()}
 	}
+	if draft == nil {
+		return &Action{Instance: instance.Name, Title: target.Title, Kind: "error", Reason: "rssToAni 没有返回订阅草稿"}
+	}
+	// 草稿里的 enable 由我们兜底，避免实例默认值把下载打开
+	draft["enable"] = enable
+	draft["standbyRssList"] = standbyList(standby)
+
+	title := firstNonEmpty(stringField(draft, "title"), target.Title, primary.Label)
 	return &Action{
 		Instance: instance.Name,
-		Title:    firstNonEmpty(target.Title, primary.Label),
+		Title:    title,
 		Kind:     "add",
 		Reason:   "实例中没有该订阅，按规则新建（默认不启用，避免触发下载）",
 		Changes:  []Change{{Field: "url", To: primary.URL}, {Field: "standbyRssList", To: standbyText(standby)}},
-		body:     body,
+		body:     draft,
 	}
 }
 
@@ -368,13 +394,32 @@ func Apply(ctx context.Context, cfg *config.Config, plan *Plan) (updated, added 
 func buildEngine(cfg *config.Config, maxStandby int) (*rules.Engine, error) {
 	primary := make([]rules.Rule, 0, len(cfg.Rules.Primary))
 	for _, rule := range cfg.Rules.Primary {
-		primary = append(primary, rules.Rule{Name: rule.Name, Match: rule.Match, Priority: rule.Priority, Site: rule.Site})
+		primary = append(primary, rules.Rule{
+			Name:     rule.Name,
+			Match:    rule.Match,
+			Priority: rule.Priority,
+			Site:     rule.Site,
+			Scope:    rule.ScopeOr(),
+		})
 	}
 	deny := make([]rules.DenyRule, 0, len(cfg.Rules.Deny))
 	for _, rule := range cfg.Rules.Deny {
 		deny = append(deny, rules.DenyRule{Match: rule.Match, Why: rule.Why})
 	}
 	return rules.New(primary, deny, maxStandby)
+}
+
+// siteDataClient 返回提供站点数据的实例客户端（mikanGroup / aniBTGroup / animeGardenGroup 走它）。
+func siteDataClient(cfg *config.Config) (*assapi.Client, string, error) {
+	name := cfg.SiteInstance()
+	if name == "" {
+		return nil, "", fmt.Errorf("没有启用的实例，无法获取站点数据")
+	}
+	client, err := newClient(cfg, name)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, name, nil
 }
 
 func newClient(cfg *config.Config, instanceName string) (*assapi.Client, error) {
@@ -399,14 +444,16 @@ func timeoutOf(cfg *config.Config) time.Duration {
 }
 
 func queryOf(ani assapi.Ani) source.Query {
+	rawURL := stringField(ani, "url")
 	query := source.Query{
-		BgmID:      source.BgmIDFromURL(stringField(ani, "bgmUrl")),
 		Title:      firstNonEmpty(stringField(ani, "title"), stringField(ani, "mikanTitle")),
 		JPTitle:    stringField(ani, "jpTitle"),
 		MikanTitle: stringField(ani, "mikanTitle"),
 		NyaaQuery:  firstNonEmpty(stringField(ani, "jpTitle"), stringField(ani, "title")),
+		RSSURL:     rawURL,
 	}
-	rawURL := stringField(ani, "url")
+	query.BgmID = source.BgmIDFromURL(stringField(ani, "bgmUrl"))
+	query.MikanID = source.MikanIDFromURL(rawURL)
 	if parsed, err := url.Parse(rawURL); err == nil {
 		params := parsed.Query()
 		if query.BgmID == "" {
@@ -415,9 +462,6 @@ func queryOf(ani assapi.Ani) source.Query {
 		if id := params.Get("bangumiId"); id != "" {
 			query.MikanID = id
 		}
-	}
-	if query.BgmID == "" {
-		query.BgmID = source.BgmIDFromURL(stringField(ani, "bgmUrl"))
 	}
 	return query
 }
