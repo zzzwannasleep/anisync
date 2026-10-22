@@ -1,0 +1,117 @@
+package rules
+
+import (
+	"testing"
+
+	"github.com/zzzwannasleep/assm/internal/source"
+)
+
+func mustEngine(t *testing.T, primary []Rule, deny []DenyRule, maxStandby int) *Engine {
+	t.Helper()
+	engine, err := New(primary, deny, maxStandby)
+	if err != nil {
+		t.Fatalf("编译规则失败: %v", err)
+	}
+	return engine
+}
+
+func labels(candidates []source.Candidate) []string {
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, candidate.Label+"@"+candidate.Site)
+	}
+	return out
+}
+
+func TestRankPriorityBeatsSiteOrder(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "桜都", Match: `(?i)sakurato|桜都`, Priority: 10},
+		{Name: "LoliHouse", Match: `(?i)lolihouse`, Priority: 20},
+	}, nil, 3)
+
+	// 站点顺序上 anibt 更靠前，但 sakurato 在 mikan 上、且规则优先级更高
+	candidates := []source.Candidate{
+		{Site: "anibt", Label: "LoliHouse", SiteOrder: 0},
+		{Site: "mikan", Label: "桜都字幕组", SiteOrder: 2},
+	}
+	ranked := engine.Rank(candidates)
+	if got := labels(ranked); len(got) != 2 || got[0] != "桜都字幕组@mikan" {
+		t.Fatalf("期望桜都排第一，实际 %v", got)
+	}
+}
+
+func TestRankDeduplicatesSameGroupAcrossSites(t *testing.T) {
+	engine := mustEngine(t, nil, nil, 3)
+	candidates := []source.Candidate{
+		{Site: "anibt", Label: "桜都字幕组", SiteOrder: 0, Weight: 5, URL: "a"},
+		{Site: "animegarden", Label: "桜都字幕组", SiteOrder: 1, Weight: 99, URL: "b"},
+		{Site: "mikan", Label: "LoliHouse", SiteOrder: 2, URL: "c"},
+	}
+	ranked := engine.Rank(candidates)
+	if len(ranked) != 2 {
+		t.Fatalf("同名字幕组应只保留一条，实际 %d 条: %v", len(ranked), labels(ranked))
+	}
+	// 同优先级下按 weight 降序，所以保留 animegarden 那条
+	if ranked[0].URL != "b" {
+		t.Fatalf("应保留 weight 更高的镜像，实际 %v", labels(ranked))
+	}
+}
+
+func TestRankWeightBreaksTieWithoutRules(t *testing.T) {
+	engine := mustEngine(t, nil, nil, 3)
+	candidates := []source.Candidate{
+		{Site: "anibt", Label: "杂鱼组", SiteOrder: 0, Weight: 1},
+		{Site: "anibt", Label: "主力组", SiteOrder: 0, Weight: 50},
+	}
+	ranked := engine.Rank(candidates)
+	if ranked[0].Label != "主力组" {
+		t.Fatalf("无规则命中时应按发布量排序，实际 %v", labels(ranked))
+	}
+}
+
+func TestDenyRuleDropsCandidate(t *testing.T) {
+	engine := mustEngine(t, nil, []DenyRule{{Match: `合集|BDRip`, Why: "不要合集"}}, 3)
+	candidates := []source.Candidate{
+		{Site: "anibt", Label: "某某字幕组", URL: "https://x/?q=BDRip"},
+		{Site: "anibt", Label: "正常组", URL: "https://x/?q=normal"},
+	}
+	ranked := engine.Rank(candidates)
+	if len(ranked) != 1 || ranked[0].Label != "正常组" {
+		t.Fatalf("合集候选应被剔除，实际 %v", labels(ranked))
+	}
+}
+
+func TestSiteScopedRuleOnlyMatchesThatSite(t *testing.T) {
+	engine := mustEngine(t, []Rule{{Name: "只在 nyaa 生效", Match: "ToonsHub", Priority: 5, Site: "nyaa"}}, nil, 3)
+
+	anibtCandidate := source.Candidate{Site: "anibt", Label: "ToonsHub", SiteOrder: 0}
+	if name, priority, ok := engine.Match(anibtCandidate); ok {
+		t.Fatalf("站点限定规则不应命中 anibt 候选，实际 name=%q priority=%d", name, priority)
+	} else if priority != UnmatchedPriority {
+		t.Fatalf("未命中时应为兜底优先级，实际 %d", priority)
+	}
+
+	nyaaCandidate := source.Candidate{Site: "nyaa", Label: "ToonsHub", SiteOrder: 3}
+	name, priority, ok := engine.Match(nyaaCandidate)
+	if !ok || name != "只在 nyaa 生效" || priority != 5 {
+		t.Fatalf("nyaa 候选应命中站点限定规则，实际 ok=%v name=%q priority=%d", ok, name, priority)
+	}
+}
+
+func TestSiteScopedRulePromotesItsSiteInDedupe(t *testing.T) {
+	// 同名候选跨站点去重时，被站点限定规则提权的那条应该胜出
+	engine := mustEngine(t, []Rule{{Name: "nyaa 优先", Match: "ToonsHub", Priority: 5, Site: "nyaa"}}, nil, 3)
+	ranked := engine.Rank([]source.Candidate{
+		{Site: "anibt", Label: "ToonsHub", SiteOrder: 0, URL: "anibt-url"},
+		{Site: "nyaa", Label: "ToonsHub", SiteOrder: 3, URL: "nyaa-url"},
+	})
+	if len(ranked) != 1 || ranked[0].URL != "nyaa-url" {
+		t.Fatalf("应保留被规则提权的 nyaa 候选，实际 %v", labels(ranked))
+	}
+}
+
+func TestInvalidRegexIsRejected(t *testing.T) {
+	if _, err := New([]Rule{{Name: "坏规则", Match: "([", Priority: 1}}, nil, 3); err == nil {
+		t.Fatal("非法正则应当报错")
+	}
+}

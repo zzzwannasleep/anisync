@@ -1,0 +1,68 @@
+# assm 配置示例：复制为 config.yaml 后按需修改
+#   Windows: %APPDATA%\assm\config.yaml
+#   macOS/Linux: ~/.config/assm/config.yaml
+# 也可以用 --config 指定任意路径。
+
+# 本地 Web 设置页监听地址（assm serve / assm tray 使用）
+listen: 127.0.0.1:7788
+
+# 访问站点/实例用的代理，留空则用环境变量 HTTPS_PROXY
+proxy: http://127.0.0.1:7890
+
+# 站点爬取优先级：从高到低，同优先级的候选按这个顺序兜底
+sources:
+  order:
+    - anibt          # AniBT 官方 API，字幕组维度
+    - animegarden    # AnimeGarden API，字幕组维度
+    - mikan          # Mikan 标题搜索 + 详情页反查 bgm
+    - nyaa           # Nyaa 搜索，按 [放流组] 聚合，type=other
+  stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 少
+  timeoutSeconds: 25
+
+rules:
+  # 正则 + 优先级，数字越小越优先；第一条命中的规则决定该候选的优先级
+  primary:
+    - name: 桜都字幕组
+      match: '(?i)sakurato|桜都'
+      priority: 10
+    - name: LoliHouse
+      match: '(?i)lolihouse|萝莉屋'
+      priority: 20
+    - name: 喵萌奶茶屋
+      match: '(?i)喵萌|nyamoe'
+      priority: 30
+    - name: 北宇治字幕组
+      match: '(?i)北宇治|kitauji'
+      priority: 40
+    # 可以限定只在某个站点生效
+    - name: Nyaa 上的 ToonsHub
+      match: '(?i)toonshub'
+      priority: 50
+      site: nyaa
+  # 命中即丢弃该候选
+  deny:
+    - match: '合集|全集|BDRip|HEVC'
+      why: 不要合集/高压
+  maxStandby: 3   # 每个订阅保留多少条副 RSS
+
+# 多个 ANI-RSS 实例：同一套规则会同时打点到所有实例
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    apiKey: ${ASSM_KEY_MAIN}     # 支持 ${ENV} 写法，避免明文落盘
+  - name: 备用库
+    baseUrl: http://192.168.1.10:7789/
+    apiKey: ${ASSM_KEY_BACKUP}
+    enabled: false               # 临时停用
+
+# 可选：实例里没有的番剧自动新增（默认不启用订阅，避免触发下载）
+targets: []
+#  - title: 冰之城墙
+#    bgmId: "665390"
+#    instances: [主库]
+#    enable: false
+
+sync:
+  intervalMinutes: 0   # 0 = 不自动定时（托盘只提供手动「立即同步」）
+  dryRun: false
+  addMissing: false

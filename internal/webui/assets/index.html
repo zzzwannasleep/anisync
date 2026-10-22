@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>assm · 多实例主副 RSS 打点</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e9ef; --dim:#8b93a5; --accent:#3ba776; --warn:#c9772f; --err:#c0453f; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.6 "Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 22px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .path { color:var(--dim); font-size:12px; margin-left:auto; font-family:ui-monospace,Consolas,monospace; }
+  main { max-width:1180px; margin:0 auto; padding:22px; display:grid; gap:18px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  section > h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 12px; font-weight:600; }
+  .row { display:grid; gap:8px; align-items:center; }
+  .inst { grid-template-columns: 130px 1fr 1fr 74px 74px; }
+  .rule { grid-template-columns: 150px 1fr 80px 90px 60px; }
+  .deny { grid-template-columns: 1fr 140px 60px; }
+  input, select { background:#0c0e13; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 9px; font:inherit; width:100%; }
+  input:focus, select:focus { outline:1px solid var(--accent); border-color:var(--accent); }
+  button { background:#20242e; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button:hover { border-color:#3a4252; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04120b; font-weight:600; }
+  button.danger { color:#e28b86; }
+  button:disabled { opacity:.5; cursor:default; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .hint { color:var(--dim); font-size:12px; }
+  .status { margin-left:auto; font-size:12px; color:var(--dim); }
+  .status.ok { color:var(--accent); } .status.err { color:var(--err); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; font-size:12px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#9fd8bb; word-break:break-all; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid var(--line); color:var(--dim); }
+  .tag.update { color:#e0b070; border-color:#4a3a22; }
+  .tag.add { color:#7fd0a0; border-color:#22452f; }
+  .tag.noop { color:var(--dim); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:grab; font-size:12px; background:#0c0e13; }
+  .chip.on { border-color:var(--accent); color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <strong style="color:var(--accent)">assm</strong>
+  <h1>多 ANI-RSS 实例 · 主副 RSS 自动打点</h1>
+  <span class="path" id="cfgPath"></span>
+</header>
+
+<main>
+  <section>
+    <h2>ANI-RSS 实例</h2>
+    <div id="instances"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <button onclick="addInstance()">+ 添加实例</button>
+      <span class="hint">apiKey 支持 <code>${ENV_NAME}</code> 写法，避免明文落盘</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>站点爬取优先级（从上到下）</h2>
+    <div class="chips" id="sourceOrder"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <label class="hint"><input type="checkbox" id="stopOnFirst" style="width:auto"> 命中第一个站点就停止（更快，但副 RSS 会少）</label>
+      <label class="hint">超时 <input type="number" id="timeout" style="width:70px" min="5" max="120"> 秒</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>字幕组规则（正则 + 优先级，数字越小越优先）</h2>
+    <div id="rules"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <button onclick="addRule()">+ 添加规则</button>
+      <span class="hint">例：<code>(?i)sakurato|桜都</code> 优先级 10；<code>lolihouse</code> 优先级 20</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>排除规则（命中即丢弃）</h2>
+    <div id="deny"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <button onclick="addDeny()">+ 添加排除</button>
+      <label class="hint">每个订阅最多保留 <input type="number" id="maxStandby" style="width:60px" min="0" max="20"> 条副 RSS</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>执行</h2>
+    <div class="toolbar">
+      <button class="primary" onclick="save()">保存配置</button>
+      <button onclick="plan()">生成计划（只读）</button>
+      <button class="primary" onclick="sync()">执行同步</button>
+      <label class="hint"><input type="checkbox" id="addMissing" style="width:auto"> 自动新增实例里没有的订阅（默认不启用，避免触发下载）</label>
+      <span class="status" id="status"></span>
+    </div>
+    <div id="planOut" style="margin-top:14px"></div>
+  </section>
+</main>
+
+<script>
+let cfg = null;
+let sources = [];
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  return await res.json();
+}
+function setStatus(text, kind) {
+  const el = document.getElementById('status');
+  el.textContent = text || '';
+  el.className = 'status ' + (kind || '');
+}
+
+async function load() {
+  const [data, src] = await Promise.all([api('/api/config'), api('/api/sources')]);
+  cfg = data.config;
+  sources = src;
+  document.getElementById('cfgPath').textContent = data.path;
+  render();
+}
+
+function render() {
+  const box = document.getElementById('instances');
+  box.innerHTML = '';
+  (cfg.instances || []).forEach((inst, i) => {
+    const row = document.createElement('div');
+    row.className = 'row inst';
+    row.innerHTML = `
+      <input value="${esc(inst.name || '')}" placeholder="名字" oninput="cfg.instances[${i}].name=this.value">
+      <input value="${esc(inst.baseUrl || '')}" placeholder="https://ass.example.com/" oninput="cfg.instances[${i}].baseUrl=this.value">
+      <input value="${esc(inst.apiKey || '')}" placeholder="API Key 或 \${ENV_NAME}" oninput="cfg.instances[${i}].apiKey=this.value">
+      <button onclick="testInstance(${i})">测试</button>
+      <button class="danger" onclick="delInstance(${i})">删除</button>`;
+    box.appendChild(row);
+  });
+  if (!(cfg.instances || []).length) box.innerHTML = '<p class="hint">还没有实例，点下面的按钮添加。</p>';
+
+  const order = document.getElementById('sourceOrder');
+  order.innerHTML = '';
+  sources.forEach((src) => {
+    const on = (cfg.sources.order || []).includes(src.id);
+    const chip = document.createElement('span');
+    chip.className = 'chip' + (on ? ' on' : '');
+    chip.textContent = (on ? (cfg.sources.order.indexOf(src.id) + 1) + '. ' : '') + src.name;
+    chip.title = src.note + '（点击切换启用）';
+    chip.onclick = () => toggleSource(src.id);
+    order.appendChild(chip);
+  });
+  document.getElementById('stopOnFirst').checked = !!cfg.sources.stopOnFirstMatch;
+  document.getElementById('timeout').value = cfg.sources.timeoutSeconds || 25;
+  document.getElementById('maxStandby').value = cfg.rules.maxStandby || 3;
+  document.getElementById('addMissing').checked = !!cfg.sync.addMissing;
+
+  const rules = document.getElementById('rules');
+  rules.innerHTML = '';
+  (cfg.rules.primary || []).forEach((rule, i) => {
+    const row = document.createElement('div');
+    row.className = 'row rule';
+    row.innerHTML = `
+      <input value="${esc(rule.name || '')}" placeholder="名字" oninput="cfg.rules.primary[${i}].name=this.value">
+      <input value="${esc(rule.match || '')}" placeholder="正则，例如 (?i)sakurato|桜都" oninput="cfg.rules.primary[${i}].match=this.value">
+      <input type="number" value="${rule.priority ?? 10}" oninput="cfg.rules.primary[${i}].priority=Number(this.value)">
+      <select onchange="cfg.rules.primary[${i}].site=this.value">
+        <option value="">不限站点</option>
+        ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+      </select>
+      <button class="danger" onclick="delRule(${i})">删除</button>`;
+    rules.appendChild(row);
+  });
+  if (!(cfg.rules.primary || []).length) rules.innerHTML = '<p class="hint">没有规则时，所有字幕组按站点顺序排序，第一个当主 RSS。</p>';
+
+  const deny = document.getElementById('deny');
+  deny.innerHTML = '';
+  (cfg.rules.deny || []).forEach((rule, i) => {
+    const row = document.createElement('div');
+    row.className = 'row deny';
+    row.innerHTML = `
+      <input value="${esc(rule.match || '')}" placeholder="正则，例如 合集|BDRip" oninput="cfg.rules.deny[${i}].match=this.value">
+      <input value="${esc(rule.why || '')}" placeholder="备注" oninput="cfg.rules.deny[${i}].why=this.value">
+      <button class="danger" onclick="delDeny(${i})">删除</button>`;
+    deny.appendChild(row);
+  });
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function toggleSource(id) {
+  const list = cfg.sources.order || (cfg.sources.order = []);
+  const at = list.indexOf(id);
+  if (at >= 0) list.splice(at, 1); else list.push(id);
+  render();
+}
+function addInstance() { (cfg.instances = cfg.instances || []).push({ name: '', baseUrl: '', apiKey: '', enabled: true }); render(); }
+function delInstance(i) { cfg.instances.splice(i, 1); render(); }
+function addRule() { (cfg.rules.primary = cfg.rules.primary || []).push({ name: '', match: '', priority: 10, site: '' }); render(); }
+function delRule(i) { cfg.rules.primary.splice(i, 1); render(); }
+function addDeny() { (cfg.rules.deny = cfg.rules.deny || []).push({ match: '', why: '' }); render(); }
+function delDeny(i) { cfg.rules.deny.splice(i, 1); render(); }
+
+function collect() {
+  cfg.sources.stopOnFirstMatch = document.getElementById('stopOnFirst').checked;
+  cfg.sources.timeoutSeconds = Number(document.getElementById('timeout').value) || 25;
+  cfg.rules.maxStandby = Number(document.getElementById('maxStandby').value) || 3;
+  cfg.sync.addMissing = document.getElementById('addMissing').checked;
+  return cfg;
+}
+
+async function save() {
+  setStatus('保存中…');
+  const res = await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect()) });
+  if (res.error) return setStatus(res.error, 'err');
+  setStatus('已保存到 ' + res.path, 'ok');
+}
+
+async function testInstance(i) {
+  const inst = collect().instances[i];
+  setStatus('测试 ' + (inst.name || inst.baseUrl) + ' …');
+  const res = await api('/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inst) });
+  if (!res.ok) return setStatus(res.error, 'err');
+  setStatus(`连接成功：v${res.version}，订阅 ${res.total} 条`, 'ok');
+}
+
+async function plan() {
+  await save();
+  setStatus('正在爬取站点并生成计划…');
+  document.getElementById('planOut').innerHTML = '<p class="hint">爬取中，站点多/番剧多时需要一会儿…</p>';
+  const res = await api('/api/plan', { method: 'POST' });
+  if (res.error) { document.getElementById('planOut').innerHTML = ''; return setStatus(res.error, 'err'); }
+  renderPlan(res);
+  setStatus('计划已生成', 'ok');
+}
+
+async function sync() {
+  await save();
+  setStatus('正在同步…');
+  const res = await api('/api/sync', { method: 'POST' });
+  if (res.error) return setStatus(res.error, 'err');
+  renderPlan(res.plan);
+  setStatus(`更新 ${res.updated} 条，新增 ${res.added} 条，失败 ${(res.errors || []).length} 条`, res.errors && res.errors.length ? 'err' : 'ok');
+}
+
+function renderPlan(plan) {
+  const rows = [];
+  for (const site of plan.sites || []) {
+    rows.push(`<tr><td>${site.site}</td><td colspan="3">${site.error ? '<span class="tag" style="color:var(--err)">' + esc(site.error) + '</span>' : site.candidates + ' 个候选'}</td></tr>`);
+  }
+  const head = `<table><thead><tr><th style="width:110px">实例</th><th style="width:70px">动作</th><th>订阅 / 变更</th></tr></thead><tbody>`;
+  const body = (plan.actions || []).filter((a) => a.kind !== 'noop').map((a) => {
+    const changes = (a.changes || []).map((c) => `<div><code>${c.field}</code> ${esc(c.from || '（空）')} <span style="color:var(--accent)">→</span> ${esc(c.to || '（空）')}</div>`).join('');
+    return `<tr><td>${esc(a.instance)}</td><td><span class="tag ${a.kind}">${a.kind === 'update' ? '更新' : a.kind === 'add' ? '新增' : a.kind}</span></td><td><strong>${esc(a.title)}</strong>${changes}</td></tr>`;
+  }).join('');
+  const noop = (plan.actions || []).filter((a) => a.kind === 'noop').length;
+  const skipped = (plan.skipped || []).map((s) => `<tr><td>${esc(s.instance)}</td><td><span class="tag">跳过</span></td><td>${esc(s.title)} — ${esc(s.reason)}</td></tr>`).join('');
+  document.getElementById('planOut').innerHTML =
+    head + rows.join('') + body + skipped + '</tbody></table>' +
+    `<p class="hint">无需变更 ${noop} 条，跳过 ${(plan.skipped || []).length} 条。</p>`;
+}
+
+load().catch((e) => setStatus(String(e), 'err'));
+</script>
+</body>
+</html>

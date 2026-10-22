@@ -1,0 +1,43 @@
+# Cross-compile every target platform (run on Windows).
+#   powershell -File ./scripts/build-all.ps1
+# Kept ASCII-only on purpose: Windows PowerShell reads BOM-less UTF-8 files as ANSI.
+$ErrorActionPreference = 'Stop'
+
+$root = Split-Path -Parent $PSScriptRoot
+Push-Location $root
+try {
+    New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+    $targets = @(
+        @{ os = 'windows'; arch = 'amd64' },
+        @{ os = 'windows'; arch = 'arm64' },
+        @{ os = 'darwin';  arch = 'amd64' },
+        @{ os = 'darwin';  arch = 'arm64' },
+        @{ os = 'linux';   arch = 'amd64' },
+        @{ os = 'linux';   arch = 'arm64' }
+    )
+
+    foreach ($target in $targets) {
+        $env:GOOS = $target.os
+        $env:GOARCH = $target.arch
+        $env:CGO_ENABLED = '0'          # fully static, no external runtime
+        $suffix = if ($target.os -eq 'windows') { '.exe' } else { '' }
+        $out = "dist/assm-$($target.os)-$($target.arch)$suffix"
+
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        go build -trimpath -ldflags '-s -w' -o $out ./cmd/assm
+        $sw.Stop()
+
+        $size = [math]::Round((Get-Item $out).Length / 1MB, 1)
+        Write-Host ("{0,-16} OK  {1,5} MB  {2:N1}s" -f "$($target.os)/$($target.arch)", $size, $sw.Elapsed.TotalSeconds)
+    }
+
+    Write-Host ""
+    Write-Host "Artifacts in dist/. macOS menu-bar icon needs cgo + a Mac build; use the web settings page for now."
+}
+finally {
+    $env:GOOS = ''
+    $env:GOARCH = ''
+    $env:CGO_ENABLED = ''
+    Pop-Location
+}
