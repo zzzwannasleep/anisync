@@ -33,7 +33,10 @@ try {
     }
 
     Write-Host ""
-    Write-Host "Artifacts in dist/. macOS menu-bar icon needs cgo + a Mac build; use the web settings page for now."
+    Write-Host "Artifacts in dist/."
+    Write-Host "NOTE: darwin artifacts built here are pure Go (no native menu bar icon),"
+    Write-Host "      because the macOS menu bar requires cgo and must be built on macOS."
+    Write-Host "      Use CI artifacts (assm-<version>-macos-*.app.zip) for the menu bar app."
 }
 finally {
     $env:GOOS = ''

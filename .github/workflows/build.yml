@@ -26,30 +26,56 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, goos: windows, goarch: amd64 }
-          - { runner: windows-latest, goos: windows, goarch: arm64 }
-          # darwin 双架构都在 macos-latest 上交叉编译即可：
-          # macos-13（Intel）排队久且已被 GitHub 逐步淘汰，没必要为 amd64 单独占一个 runner
-          - { runner: macos-latest,   goos: darwin,  goarch: arm64 }
-          - { runner: macos-latest,   goos: darwin,  goarch: amd64 }
-          - { runner: ubuntu-latest,  goos: linux,   goarch: amd64 }
-          - { runner: ubuntu-latest,  goos: linux,   goarch: arm64 }
+          - { runner: windows-latest, goos: windows, goarch: amd64, cgo: '0' }
+          - { runner: windows-latest, goos: windows, goarch: arm64, cgo: '0' }
+          # darwin 需要 cgo（菜单栏图标是 Objective-C），因此必须在 macOS 上构建。
+          # 两个架构都在 macos-latest 上交叉编译：macos-13（Intel）排队久且已被逐步淘汰。
+          - { runner: macos-latest,   goos: darwin,  goarch: arm64, cgo: '1' }
+          - { runner: macos-latest,   goos: darwin,  goarch: amd64, cgo: '1' }
+          - { runner: ubuntu-latest,  goos: linux,   goarch: amd64, cgo: '0' }
+          - { runner: ubuntu-latest,  goos: linux,   goarch: arm64, cgo: '0' }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
+
       - name: build
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: |
+          set -euo pipefail
+          mkdir -p dist
           suffix=""
-          [ "$GOOS" = "windows" ] && suffix=".exe"
+          if [ "$GOOS" = "windows" ]; then suffix=".exe"; fi
           go build -trimpath -ldflags '-s -w' -o "dist/assm-${GOOS}-${GOARCH}${suffix}" ./cmd/assm
+          ls -lh dist
+
+      # 光"编译通过"不足以证明菜单栏真的编进去了：检查二进制是否链接了 Cocoa
+      - name: verify menu bar is linked (darwin)
+        if: matrix.goos == 'darwin'
+        run: |
+          set -euo pipefail
+          binary="dist/assm-darwin-${{ matrix.goarch }}"
+          otool -L "$binary"
+          if ! otool -L "$binary" | grep -q Cocoa; then
+            echo "✗ 未链接 Cocoa：菜单栏代码没有编进二进制"
+            exit 1
+          fi
+          echo "✓ 已链接 Cocoa —— 原生菜单栏代码确实编入了二进制"
+
+      - name: package .app bundle (darwin)
+        if: matrix.goos == 'darwin'
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME:-dev}"
+          version="${version#v}"
+          bash scripts/package-macos.sh "dist/assm-darwin-${{ matrix.goarch }}" "$version" "${{ matrix.goarch }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: assm-${{ matrix.goos }}-${{ matrix.goarch }}
