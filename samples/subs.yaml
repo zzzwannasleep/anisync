@@ -7,33 +7,32 @@
 # 在 ANI-RSS 里选中一个组就能看到**（它把每个组标题里出现过的标签组合列出来）。
 # 按你实际要的版本调整顺序即可，不用照抄这里的排法。
 #
-# 名字怎么写、种子里的实际名字是什么，见同目录 groups.md。
-# 下面每个 match 都同时覆盖「显示名」和「种子里的名字」——
-# 有几家的两个名字完全不一样（猎户发布组 的种子名是 猎户压制部），
-# 走 nyaa 时只写显示名会静默匹配不到。
+# 每条 match 都同时写「选组界面上的显示名」和「种子标题里的组名」：
+# 走 anibt / animegarden 时规则能匹配到显示名，走 nyaa 时只有标题 ——
+# 少写一个就会在某一侧静默失效（不报错，只是永远选不到那个组）。
+# 行尾注释是该组的真实标题开头，用来核对名字。
 
-# LoliHouse 是压制组，自己做字幕，简繁内封为主，周更稳定。
-- {name: LoliHouse,     match: '(?i)lolihouse',                       priority: 10,  scope: main}
-- {name: 桜都字幕组,     match: '(?i)sakurato|桜都|樱都',                priority: 20,  scope: main}
-- {name: 喵萌奶茶屋,     match: '(?i)喵萌奶茶屋|喵萌|nyamoe',            priority: 30,  scope: main}
-- {name: 绿茶字幕组,     match: '(?i)绿茶字幕组|綠茶字幕組',              priority: 40,  scope: main}
-- {name: 北宇治字幕组,   match: '(?i)北宇治',                           priority: 50,  scope: main}
-- {name: 三明治摆烂组,   match: '(?i)三明治摆烂组|三明治擺爛組',          priority: 60,  scope: main}
-- {name: 猎户发布组,     match: '(?i)猎户发布组|猎户压制部|猎户不鸽',      priority: 70,  scope: main}
-- {name: 拨雪寻春,       match: '(?i)拨雪寻春|撥雪尋春',                 priority: 80,  scope: main}
-- {name: 悠哈璃羽字幕社, match: '(?i)悠哈璃羽',                         priority: 90,  scope: main}
-- {name: 银光字幕组,     match: '(?i)银光字幕组|銀光字幕組',              priority: 100, scope: main}
-- {name: 雪飄工作室,     match: '(?i)雪飄|雪飘|flsnow',                 priority: 110, scope: main}
-- {name: 亿次研同好会,   match: '(?i)亿次研|億次研|billion meta lab',     priority: 120, scope: main}
-- {name: MingYSub,      match: '(?i)mingysub|^mingy\b',               priority: 130, scope: main}
-- {name: SweetSub,      match: '(?i)sweetsub',                        priority: 140, scope: main}
-- {name: 黑白字幕组,     match: '(?i)黑白字幕组|黑白字幕組',              priority: 150, scope: main}
-- {name: TSDM字幕组,     match: '(?i)tsdm',                            priority: 160, scope: main}
-- {name: 银色子弹字幕组, match: '(?i)银色子弹|銀色子彈',                  priority: 170, scope: main}
-- {name: 极影字幕社,     match: '(?i)极影|極影',                         priority: 180, scope: main}
-- {name: 豌豆字幕组,     match: '(?i)豌豆',                             priority: 190, scope: main}
-- {name: 樱桃花字幕组,   match: '(?i)樱桃花|櫻桃花',                      priority: 200, scope: main}
-- {name: 冷番补完字幕组, match: '(?i)冷番补完',                          priority: 210, scope: main}
+- {name: LoliHouse,     match: '(?i)lolihouse',                       priority: 10,  scope: main}  # [LoliHouse] 黑化吧！圣女大人 第二季 …
+- {name: 桜都字幕组,     match: '(?i)sakurato|桜都|樱都',                priority: 20,  scope: main}  # [桜都字幕组] 因为鼠标光标似乎可以操控现实 …
+- {name: 喵萌奶茶屋,     match: '(?i)喵萌奶茶屋|喵萌|nyamoe',            priority: 30,  scope: main}  # 【喵萌奶茶屋】★10月新番★[被放逐的作弊赋予魔法师 …
+- {name: 绿茶字幕组,     match: '(?i)绿茶字幕组|綠茶字幕組',              priority: 40,  scope: main}  # [绿茶字幕组] … / [綠茶字幕組] …（简繁两种都发）
+- {name: 北宇治字幕组,   match: '(?i)北宇治',                           priority: 50,  scope: main}  # [北宇治字幕组] 学生会也有洞！ …
+- {name: 三明治摆烂组,   match: '(?i)三明治摆烂组|三明治擺爛組',          priority: 60,  scope: main}  # [三明治摆烂组] 亂世千金倪亞·利斯頓 …
+- {name: 猎户发布组,     match: '(?i)猎户发布组|猎户压制部|猎户不鸽',      priority: 70,  scope: main}  # 显示名 猎户发布组，种子名 [猎户压制部] 朱色假面 …
+- {name: 拨雪寻春,       match: '(?i)拨雪寻春|撥雪尋春',                 priority: 80,  scope: main}  # [❀拨雪寻春❀] 萤火虫的出嫁 …（种子名带花括号装饰）
+- {name: 悠哈璃羽字幕社, match: '(?i)悠哈璃羽',                         priority: 90,  scope: main}  # 【悠哈璃羽字幕社】[死神 千年血戰篇 禍進譚] …
+- {name: 银光字幕组,     match: '(?i)银光字幕组|銀光字幕組',              priority: 100, scope: main}  # [银光字幕组][蜡笔小新剧场版2019] …
+- {name: 雪飄工作室,     match: '(?i)雪飄|雪飘|flsnow',                 priority: 110, scope: main}  # [雪飄工作室][おねがいアイプリ] …（简繁两种写法都发）
+- {name: 亿次研同好会,   match: '(?i)亿次研|億次研|billion meta lab',     priority: 120, scope: main}  # [Billion Meta Lab] 魔法姐妹露露莉莉 …
+- {name: MingYSub,      match: '(?i)mingysub|^mingy\b',               priority: 130, scope: main}  # [MingY] 画完这个就去死 …（种子名少了个 Sub）
+- {name: SweetSub,      match: '(?i)sweetsub',                        priority: 140, scope: main}  # [SweetSub][冰之城墙][Koori no Jouheki] …
+- {name: 黑白字幕组,     match: '(?i)黑白字幕组|黑白字幕組',              priority: 150, scope: main}  # [黑白字幕组]铠真传武士骑兵 …
+- {name: TSDM字幕组,     match: '(?i)tsdm',                            priority: 160, scope: main}  # 【TSDM字幕组】[FX战士久留美] …
+- {name: 银色子弹字幕组, match: '(?i)银色子弹|銀色子彈',                  priority: 170, scope: main}  # [银色子弹字幕组][名侦探柯南][第1217集 …
+- {name: 极影字幕社,     match: '(?i)极影|極影',                         priority: 180, scope: main}  # 【极影字幕社】★07月新番【死神 千年血戰 祸进谭】…
+- {name: 豌豆字幕组,     match: '(?i)豌豆',                             priority: 190, scope: main}  # 【豌豆字幕组&风之圣殿字幕组】[死神 千年血战篇] …（常与风之圣殿联名）
+- {name: 樱桃花字幕组,   match: '(?i)樱桃花|櫻桃花',                      priority: 200, scope: main}  # [樱桃花字幕组]尼古喵喵 Yanineko - 11 …
+- {name: 冷番补完字幕组, match: '(?i)冷番补完',                          priority: 210, scope: main}  # [冷番补完字幕组][东海道四谷怪谈 …][2000][OVA] …
 
 # 没被点名的组不会被删掉，只是排在这些之后（未命中规则的基准优先级是 1000）。
 # 想让某个组彻底出局，写进 deny.yaml。

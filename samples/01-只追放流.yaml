@@ -12,7 +12,7 @@
 #   4. AniSync plan       看一眼要改什么（只读，不写任何东西）
 #   5. AniSync sync -y    确认无误再执行
 #
-# 怎么改：raws.yaml 里的顺序就是偏好，数字越小越优先。组名怎么写见 groups.md。
+# 怎么改：raws.yaml 里的顺序就是偏好，数字越小越优先。组名怎么写见 README 的「组名怎么写」。
 
 listen: 127.0.0.1:51837
 

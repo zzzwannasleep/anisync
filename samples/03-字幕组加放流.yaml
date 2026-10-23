@@ -17,7 +17,7 @@
 #   2. 改下面 instances 里的 baseUrl 和 apiKey
 #   3. AniSync check / plan / sync -y
 #
-# 怎么改：两个名单文件里的顺序都是偏好，数字越小越优先。组名怎么写见 groups.md。
+# 怎么改：两个名单文件里的顺序都是偏好，数字越小越优先。组名怎么写见 README 的「组名怎么写」。
 
 listen: 127.0.0.1:51837
 # proxy: http://127.0.0.1:7890

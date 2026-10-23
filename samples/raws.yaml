@@ -10,20 +10,23 @@
 #
 # 顺序就是偏好，数字越小越优先。想捧谁调小，想踩谁调大或写进 deny.yaml。
 #
-# 名字怎么写、种子里的实际名字是什么，见同目录 groups.md。
-# 下面每个 match 都同时覆盖「显示名」和「种子里的名字」两种写法 ——
-# 走 nyaa 时只有标题，只写显示名会静默匹配不到。
+# 每条 match 都同时写「选组界面上的显示名」和「种子标题里的组名」：
+# 走 anibt 时候选自带显示名，走 nyaa 时只有标题，少写一个就会在某一侧静默失效。
+# 行尾注释是该组的真实标题开头，用来核对名字。
+#
+# Erai-raws / SubsPlease / Judas / ASW / AnoZu / DKB 不在 AnimeGarden 注册表里，
+# 只在 Nyaa 上有，所以它们本来就只有一个名字。
 
-- {name: ToonsHub,    match: '(?i)toonshub',                 priority: 300, scope: both}
-- {name: ANi,         match: '(?i)^ani\b|\[ani\]',           priority: 310, scope: both}
-- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws',         priority: 320, scope: both}
-- {name: Erai-raws,   match: '(?i)erai-raws',                priority: 330, scope: both}
-- {name: SubsPlease,  match: '(?i)subsplease',               priority: 340, scope: both}
-- {name: Lilith-Raws, match: '(?i)lilith-raws',              priority: 350, scope: both}
-- {name: Judas,       match: '(?i)^judas\b|\[judas\]',       priority: 360, scope: both}
-- {name: ASW,         match: '(?i)^asw\b|\[asw\]',           priority: 370, scope: both}
-- {name: AnoZu,       match: '(?i)anozu',                    priority: 380, scope: both}
-- {name: DKB,         match: '(?i)^dkb\b|\[dkb\]',           priority: 390, scope: both}
+- {name: ToonsHub,    match: '(?i)toonshub',           priority: 300, scope: both}  # [ToonsHub] 冰之城墙 第二季 …
+- {name: ANi,         match: '(?i)^ani\b|\[ani\]',     priority: 310, scope: both}  # [ANi] 鐵旅！meet with 鐵道少女 …
+- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws',   priority: 320, scope: both}  # [Nix-Raws] 被追放的转生重骑士 …
+- {name: Erai-raws,   match: '(?i)erai-raws',          priority: 330, scope: both}
+- {name: SubsPlease,  match: '(?i)subsplease',         priority: 340, scope: both}
+- {name: Lilith-Raws, match: '(?i)lilith-raws',        priority: 350, scope: both}  # [Lilith-Raws] 從 Lv2 開始開外掛 …
+- {name: Judas,       match: '(?i)^judas\b|\[judas\]', priority: 360, scope: both}
+- {name: ASW,         match: '(?i)^asw\b|\[asw\]',     priority: 370, scope: both}
+- {name: AnoZu,       match: '(?i)anozu',              priority: 380, scope: both}
+- {name: DKB,         match: '(?i)^dkb\b|\[dkb\]',     priority: 390, scope: both}
 
 # ANi / Judas / ASW / DKB 这几个名字很短，`\bani\b` 这种写法会在作品名里误伤 ——
 # 比如标题是「Ani ni Tsukeru Kusuri wa Nai」时，`\bani\b` 会命中作品名里的 Ani，
