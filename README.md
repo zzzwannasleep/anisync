@@ -78,23 +78,34 @@ AniSync/
 
 **发布物一律是 zip，没有裸二进制** —— 这样「解压出来的那个文件夹」就是程序全部的地盘。
 
-### 四种跑法
+### 三种跑法
 
-同一个程序，四种用法。**CLI 与 Web 设置页每个平台都有；托盘是 Windows 的，菜单栏应用是 macOS 的。**
+同一个程序，三种用法。**三种每个平台都能跑**，区别只在有没有那个图标。
 
 | 跑法 | 怎么起 | 是什么 |
 | --- | --- | --- |
 | **CLI** | `AniSync <命令>` | `init` / `check` / `plan` / `sync` / `probe` 这些一次性命令。手跑、写脚本、丢给 cron 都用它 |
-| **Web 设置页** | `AniSync serve` | 在 `127.0.0.1:51837` 起一个本地网页：改配置、搜番剧加订阅、看计划。只监听本机，不对外 |
-| **托盘** | `AniSync tray` | Windows 通知区域常驻图标（打开设置页 / 立即同步 / 状态 / 退出）+ 按 `sync.intervalMinutes` 定时爬取。Web 设置页跟着一起起 |
-| **菜单栏应用** | 双击 `AniSync.app` | macOS 版的托盘：菜单栏图标 + 定时爬取 + Web 设置页。声明了 `LSUIElement`，不在 Dock 里占位 |
+| **Web 设置页** | `AniSync serve` | 只在 `127.0.0.1:51837` 起一个本地网页：改配置、搜番剧加订阅、看计划。**不跑定时爬取** |
+| **常驻 + 定时** | `AniSync tray` | 常驻后台，按 `sync.intervalMinutes` 定时爬取，同时把 Web 设置页一起起着 |
+
+`tray` 在 Windows 和 macOS 上会多出一个图标（右键菜单：打开设置页 / 立即同步 / 状态 / 退出），
+macOS 上那个图标就是 `AniSync.app`（声明了 `LSUIElement`，不在 Dock 里占位）。
+**Linux 上 `tray` 照常常驻、照常定时、照常提供网页，只是没有图标** ——
+它启动时会打印一行提示，`Ctrl+C` 退出：
+
+```
+AniSync 托盘：当前平台 linux 使用本地 Web 设置页。
+  设置页: http://127.0.0.1:51837
+  配置:   /path/to/AniSync/config.yaml
+按 Ctrl+C 退出。
+```
 
 几点：
 
-- **Linux 上没有托盘**：通知区域没有统一做法，Linux 就用 `AniSync serve` 加命令行。
+- **要定时爬取就用 `tray`，别用 `serve`** —— `serve` 只起网页，不跑定时。
 - **macOS 的 `.app` 里就是同一个二进制**，所以也能当 CLI 用：
   `AniSync.app/Contents/MacOS/AniSync plan`
-- **托盘 / 菜单栏应用和 CLI 读写同一份 `config.yaml`**，两种跑法可以随时换。
+- **三种跑法读写同一份 `config.yaml`**，随时能换。
 - **别把 `.app` 单独拖进 `/Applications`**：配置写在 `.app` 旁边，也就是解压出来的那个文件夹里。
   整个 `AniSync/` 文件夹一起挪到你想放的地方就行。
 
