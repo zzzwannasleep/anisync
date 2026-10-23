@@ -82,8 +82,11 @@ AniSync 就怎么认，拿到的是实例自己拼好的 RSS 地址，站点改�
 
 **默认只跑 AniBT + Nyaa。** 两家覆盖面互补：AniBT 字幕组维度、API 齐全、带热度权重；
 Nyaa 资源最广，补 AniBT 的盲区。`animegarden` / `mikan` 走的是和 AniBT 同一类实例接口，
-多出来的两家换不回额外覆盖面，因此不再进 `DefaultSourceOrder`——但**仍然可配且照常工作**，
-老配置不会因为这次调整失效。`SiteType` 的映射表也原样保留，避免下游按 `site` 字段分支的地方踩空。
+因此不再进 `DefaultSourceOrder`——但**仍然可配且照常工作**，老配置不会因为这次调整失效。
+注意 `animegarden` 不是 AniBT 的一层备份，而是**另一批组**：实测 121 部番剧里，只在它那边出现的
+「番剧 × 字幕组」组合有 111 个（喵萌奶茶屋 16、猎户发布组 9 …），只在 AniBT 出现的多是放流组
+（ToonsHub 60 部）。想按版本挑中文字幕就得显式写进 `sources.order`（样例 02/03/04 都这么配，
+只追放流的 01 可以不开）。`SiteType` 的映射表也原样保留，避免下游按 `site` 字段分支的地方踩空。
 
 **Mikan 需要番剧页地址而非 RSS 地址。** `mikanGroup` 的入参是 `https://mikanani.me/Home/Bangumi/<id>`。优先从订阅现有 RSS 的 `bangumiId` 推导；推不出来时用实例的 `mikan` 搜索接口按标题反查，并用 `bgmId` 精确匹配结果，而不是按标题猜。
 
@@ -91,7 +94,7 @@ Nyaa 资源最广，补 AniBT 的盲区。`animegarden` / `mikan` 走的是和 A
 
 **规则分两个轴。** ANI-RSS 那边组名是一个**身份**（订阅的 `subgroup` / `standbyRssList[].label`，存的就是选组界面上的显示名），字幕类型才是标题里的**文字**。AniSync 照抄这个划分：`in: group` 只看组名，`in: title` 只看资源标题，`in: any`（默认）两者拼在一起看。分轴解决了两件事 —— 一是短组名不会再被作品名误伤（`Ani ni Tsukeru Kusuri wa Nai` 里的 `Ani` 不会把别的组认成 ANi，于是 `^ani\b|\[ani\]` 这种位置锚定可以退回 `^ani\b`）；二是组名那一侧同时含显示名与**种子标题方括号里的名字**（`GroupAliasesFromTitles`，与 ANI-RSS 的 `ItemsUtil.getSubgroup()` 同源），所以 `猎户发布组` 与 `猎户压制部` 写哪个都能命中，用户不必维护对照表。`in: any` 保持分轴之前的语义，已有配置的挑选结果不变。
 
-**`scope` 决定规则参与哪一侧。** `main` 只挑主 RSS、`standby` 只挑副 RSS、`both` 两边都参与，因此「主 RSS 是字幕组、副 RSS 是放流组」只是一组 `scope: standby` 规则。
+**`scope` 决定规则参与哪一侧。** `main` 只挑主 RSS、`standby` 只挑副 RSS、`both` 两边都参与，因此「主 RSS 按版本档挑、副 RSS 用放流组」就是 `subs.yaml`（`scope: main`）+ `raws.yaml`（`scope: both`）两份文件。
 
 **缓存只存需要的部分。** 缓存键为 `站点:番剧标识`，只保留每个字幕组最近 12 条标题样本，热度单独用 `Total` 字段承载。缓存写入是「临时文件 + rename」的原子替换，读不出来就退化成无缓存，不影响同步结果。
 

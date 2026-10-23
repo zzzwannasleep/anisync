@@ -2,29 +2,45 @@
 #
 # 适合：想要中文字幕，但又不愿意为了等字幕组而漏集。
 #
-# 主 RSS 是字幕组 / 压制组（subs.yaml 排第一的 LoliHouse 这种），
-# 副 RSS 是放流组（raws.yaml 排第一的 ToonsHub）—— 字幕组还没出的时候先顶上，
-# 出了之后主 RSS 会按规则换成字幕组那版。
+# 主 RSS 是字幕组（按 subs.yaml 的版本分档挑：简繁日内封 > 简日内嵌 > 繁日内嵌），
+# 副 RSS 是放流组（按 raws.yaml 的档挑：有中文的 ToonsHub / Nix-Raws 优先）——
+# 字幕组还没出的时候放流先顶上，出了之后主 RSS 会换成字幕组那版。
 #
 # 这是怎么做到的：两个文件一起引用，
 #   subs.yaml 里的规则是 scope: main  —— 只参与挑主 RSS
-#   raws.yaml 里的规则是 scope: both  —— 主副都参与，但 priority 从 300 起
-# 于是主 RSS 永远先给字幕组（10~210），只有某部番没有任何字幕组在做时
-# 才退回落在这份放流名单上；副 RSS 因为 subs.yaml 不参与，只会在放流组里选。
+#   raws.yaml 里的规则是 scope: both  —— 主副都参与
+# 于是副 RSS 只会在放流组里选（subs.yaml 不参与副 RSS），
+# 主 RSS 优先给字幕组。
+#
+# ★ 文件顺序在这里是必须的：raws.yaml 必须写在 subs.yaml 前面。
+#   匹配是「按声明顺序，第一条命中的生效」，不是「按数字最小的生效」——
+#   数字只决定同一档内的先后。所以文件顺序 = 谁先被匹配。
+#   放流名单排在前面，点过名的放流组就先落到 400/450/500 那几档，
+#   不会再往下掉进 subs.yaml 的版本档。
+#   为什么非这样不可：Nix-Raws 的标题里写着 [简繁内封]，光看版本它跟 LoliHouse 是同一档；
+#   不先把放流组挑出来，它会靠「发布条数多」在主 RSS 上挤掉字幕组 ——
+#   实测就是这么发生的（幼女战记 / 擅长逃跑的殿下 / 感谢对战 等 6 部）。
 #
 # 怎么用：
 #   1. 整份复制成程序同目录的 config.yaml（subs.yaml / raws.yaml / deny.yaml 一起拿）
 #   2. 改下面 instances 里的 baseUrl 和 apiKey
 #   3. AniSync check / plan / sync -y
 #
-# 怎么改：两个名单文件里的顺序都是偏好，数字越小越优先。组名怎么写见 subs.yaml 开头。
+# 怎么改：两个文件里的数字都是偏好，数字越小越优先。
+# 想让「版本」压过「组类别」（比如 Nix-Raws 的简繁内封就该赢猎户发布组的简日内嵌），
+# 把 primaryFiles 调成 [subs.yaml, raws.yaml] —— 版本档先匹配，放流组也会按版本参选。
+# 组名怎么写见 raws.yaml 开头。
 
 listen: 127.0.0.1:51837
 # proxy: http://127.0.0.1:7890
 
 sources:
   instance: ""
-  order: [anibt, nyaa]
+  # anibt 和 animegarden 是两批不同的组，不是「一层套一层」，两个都要开：
+  # 实测只在 animegarden 出现的字幕组组合有 111 个（喵萌奶茶屋 16、猎户发布组 9、
+  # 悠哈璃羽字幕社 7、爱恋字幕社 5 …），只开 anibt 会让这些番剧退回到放流组当主。
+  # nyaa 补 Erai-raws / SubsPlease / Judas 这些只在那边的放流组。
+  order: [anibt, animegarden, nyaa]
   stopOnFirstMatch: false
   timeoutSeconds: 25
   cacheMinutes: 720
@@ -33,8 +49,9 @@ rules:
   # 想要几条副 RSS 就把这个数字调大 —— 点过名的放流组会按顺序依次填进去。
   maxStandby: 1
 
-  # 顺序有意义：subs.yaml 在前、raws.yaml 在后，priority 也是 subs 更小。
-  primaryFiles: [subs.yaml, raws.yaml]
+  # 顺序有意义，而且必须这样写：raws.yaml 在前（放流组整组转交放流档），
+  # subs.yaml 在后（其余候选按版本分档）。详见文件开头的 ★。
+  primaryFiles: [raws.yaml, subs.yaml]
   denyFiles: [deny.yaml]
 
   deny:

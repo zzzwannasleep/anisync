@@ -2,8 +2,16 @@
 #
 # 适合：不要中文字幕，只要第一时间拿到片子 —— 自己压、自己配外挂字幕。
 #
-# 主 RSS 与副 RSS 都是放流组：主用 raws.yaml 里排第一的（ToonsHub），
-# 副用排第二的（ANi）。副 RSS 的作用是主 RSS 缺集时顶上，所以要选几乎每集都发的。
+# 主 RSS 与副 RSS 都是放流组，按 raws.yaml 分档挑：
+#   400/450 是有中文的放流组（ToonsHub = Nix-Raws），500 是没中文的，同档比发布条数。
+#   副 RSS 的作用是主 RSS 缺集时顶上，所以要选几乎每集都发的。
+#
+# ★ 注意：raws.yaml 现在会优先挑「带中文字幕」的放流组 —— 对只追放流的人来说这不碍事，
+#   那种片是内封的软字幕轨（MKV 里的独立轨），不想要在播放器里关掉就行，画面本身还是原声。
+#   真要纯生肉，把 raws.yaml 开头那两条「有中文」删掉，只留 500 那档。
+#   某次实测（46 条新增 + 21 条改动）：主 RSS 落在 raws.yaml 点过名的放流组上有 61 条
+#   （Nix-Raws 29 / ToonsHub 25 / ANi 7），只有 4 条是那个番剧根本没有放流组在做，
+#   退回到了它实际有的组（字幕组）—— 那不是配错，是没得挑。
 #
 # 怎么用：
 #   1. 整份复制成程序同目录的 config.yaml（raws.yaml 和 deny.yaml 一起拿）
@@ -12,7 +20,7 @@
 #   4. AniSync plan       看一眼要改什么（只读，不写任何东西）
 #   5. AniSync sync -y    确认无误再执行
 #
-# 怎么改：raws.yaml 里的顺序就是偏好，数字越小越优先。组名怎么写见 raws.yaml 开头。
+# 怎么改：raws.yaml 里的数字就是档位。组名怎么写见 raws.yaml 开头。
 
 listen: 127.0.0.1:51837
 
@@ -25,7 +33,9 @@ sources:
   # 站点数据借用哪个实例的接口；留空 = 第一个启用的实例。
   instance: ""
   # anibt 走实例接口（字幕组维度、API 齐全），nyaa 由 AniSync 自己按关键字搜。
-  # 放流组里 Erai-raws / SubsPlease 这些只在 nyaa 上有，所以两家都要开着。
+  # 放流组里 Erai-raws / SubsPlease / Judas 这些只在 nyaa 上有，所以两家都要开着。
+  # 为什么不加 animegarden：它侧面的独家候选几乎都是字幕组，放流组只有 3 个组合
+  # （实测 121 部番剧），多一次请求换不回来什么。要字幕组就照 02/03 加进去。
   order: [anibt, nyaa]
   stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 会变少
   timeoutSeconds: 25

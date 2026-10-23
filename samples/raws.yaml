@@ -1,35 +1,68 @@
 # AniSync 放流组排名（生肉 / 原声，不做字幕或只做硬字幕）
 #
-# scope: both —— 主副 RSS 都参与，这是「只追放流」那一份的主名单，
-#               也是「字幕组加放流」那一份的副名单。
-# in: group   —— 只看组名，不看资源标题。
+# scope: both —— 主副 RSS 都参与：这是「只追放流」那一份的主名单，
+#               也是「按版本挑主 RSS」那一份的副名单。
 #
-# 为什么 priority 从 300 起：和 subs.yaml 一起用时（03 号样例），
-# 字幕组的规则是 10~210，这里必须排在后面，主 RSS 才会优先给字幕组；
-# 只有某部番没有任何字幕组在做时，才退回落在这里的放流组。
-# 单独用时（01 号样例）没有竞争，排第一的就是主 RSS。
+# 排序分三档，第一档带条件：
 #
-# 顺序就是偏好，数字越小越优先。想捧谁调小，想踩谁调大或写进 deny.yaml。
+#   400：**有中文**的放流组 —— ToonsHub = Nix-Raws。
+#     条件是逐部番剧判的，不是给组贴死标签：规则读的是这个组**这部番剧**
+#     最近那 12 条资源标题，标题里有中文标记才算有中文。
+#     所以 ToonsHub 在这部番剧上有中文就进这一档，换一部没有就自动掉到 500。
 #
-# 组名怎么写见 subs.yaml 开头：写 ANI-RSS 选组界面上显示的名字就行。
+#     为什么必须有这个条件：放流组走哪个片源，决定它带不带中文字幕 ——
+#     ToonsHub 走 NF/CR/DSNP，有的片源给 CHS&CHT&JP&EN&KO，有的只给 JP&EN 甚至只有 JP；
+#     Nix-Raws 基本每部都发 [简繁内封]；Erai-raws 只发日英。
+#     实测 121 部番剧的候选：ToonsHub 50 部有中文、14 部没有；Nix-Raws 71 部有中文。
+#
+#   450：**有中文但只有繁体硬字幕**的 ANi。
+#     实测 ANi 永远带 CHT，所以它总能进「有中文」那一类；但它的中文是
+#     Baha 的繁体内嵌 MP4，按 subs.yaml 的版本分档属于最低一档（繁日内嵌）。
+#     所以把它单独放在 400 和 500 之间：比没中文的强，比简繁软字幕的差。
+#     （实测过：ANi 和 ToonsHub/Nix-Raws 同档时，会因为发布条数/站点顺序
+#      抢走「只有 Nix 有中文」那几部番剧的主 RSS，那样就违背了这条排序。）
+#
+#   500：**没中文**就无所谓谁，谁放得快谁上。
+#     这一档不排组，全部同档，交给引擎兜底：发布条数 -> 站点顺序 -> 组名。
+#     说实话：AniSync 手上没有「每集几点放」的数据，判定不了真正的速度，
+#     只能用「谁发布的资源多」近似（发得多 = 更可能第一时间有片）。
+#     想指定谁优先，就把它单独拆一档，priority 写 475（见文件末尾）。
+#
+# 用户要的四种情况落到规则上：
+#   ToonsHub 和 Nix-Raws 都有中文 -> 都命中 400，同档，按兜底比（谁多谁上）
+#   只有 Nix-Raws 有中文          -> ToonsHub 掉到 500，Nix 命中 400，Nix 上
+#   ToonsHub 又快又有中文         -> 命中 400 且条数多，兜底也赢
+#   都没中文                      -> 都掉到 500，同档，按兜底比
+#
+# 下面三条里那段「中文标记」就是「有中文」的判据，要改就三条一起改：
+#   (?:简繁|簡繁|简日|簡日|简体|簡體|简中|簡中|繁日|繁体|繁體|繁中|\bCH[ST]\b|\bGB\b|GB_CN|BIG5)
+# 简繁两种字形都列上了 —— 同一个词的不同写法，正则不通用，只能都写。
+# 这三条用 in: any（组名 + 标题一起看），因为「谁」和「有没有中文」是两个轴，
+# 必须同时成立才叫「这个组这部番剧有中文」；in: group 看不到标题，in: title 看不到组名。
+# `.*` 是贪婪的，会在整段文本里找 —— 所以只要这个组最近 12 条里有任意一条带中文标记就算数。
+
+# ---- 400：有中文的放流组，同档 ----
+- {name: ToonsHub·有中文, match: '(?is)toonshub.*(?:简繁|簡繁|简日|簡日|简体|簡體|简中|簡中|繁日|繁体|繁體|繁中|\bCH[ST]\b|\bGB\b|GB_CN|BIG5)', priority: 400, scope: both, in: any}
+- {name: Nix-Raws·有中文, match: '(?is)nix-raws.*(?:简繁|簡繁|简日|簡日|简体|簡體|简中|簡中|繁日|繁体|繁體|繁中|\bCH[ST]\b|\bGB\b|GB_CN|BIG5)', priority: 400, scope: both, in: any}
+
+# ---- 450：有中文，但只有繁体内嵌（按 subs.yaml 属于最低一档）----
+- {name: ANi·有中文, match: '(?is)^ani\b.*(?:简繁|簡繁|简日|簡日|简体|簡體|简中|簡中|繁日|繁体|繁體|繁中|\bCH[ST]\b|\bGB\b|GB_CN|BIG5)', priority: 450, scope: both, in: any}
+
+# ---- 500：没中文（或认不出中文标记）的放流组，同档 ----
+# 用 in: group：这一档只认组名，标题不参与。
+- {name: 放流组, match: '(?i)toonshub|nix-raws|erai-raws|subsplease|lilith-raws|^judas\b|^asw\b|anozu|^dkb\b|^ani\b', priority: 500, scope: both, in: group}
+
 # Erai-raws / SubsPlease / Judas / ASW / AnoZu / DKB 这几家只在 Nyaa 上有
 # （AnimeGarden 注册表里没有），它们的组名就是标题方括号里的那个名字，照写即可。
-
-- {name: ToonsHub,    match: '(?i)toonshub',        priority: 300, scope: both, in: group}
-- {name: ANi,         match: '(?i)^ani\b',          priority: 310, scope: both, in: group}
-- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws', priority: 320, scope: both, in: group}
-- {name: Erai-raws,   match: '(?i)erai-raws',       priority: 330, scope: both, in: group}
-- {name: SubsPlease,  match: '(?i)subsplease',      priority: 340, scope: both, in: group}
-- {name: Lilith-Raws, match: '(?i)lilith-raws',     priority: 350, scope: both, in: group}
-- {name: Judas,       match: '(?i)^judas\b',        priority: 360, scope: both, in: group}
-- {name: ASW,         match: '(?i)^asw\b',          priority: 370, scope: both, in: group}
-- {name: AnoZu,       match: '(?i)anozu',           priority: 380, scope: both, in: group}
-- {name: DKB,         match: '(?i)^dkb\b',          priority: 390, scope: both, in: group}
-
-# ANi / Judas / ASW / DKB 这几个名字很短，所以锚在组名开头（^ani\b）：
-# 名字叫 AnimeGarden 的组不会被 ^ani\b 命中（ani 后面是 m，不是词边界）。
+# Erai-raws 只发日英，所以它永远落在 500 —— 有中文的放流组在场时轮不到它。
 #
-# 以前这里写的是 ^ani\b|\[ani\]，还要在注释里解释「为什么不能写 \bani\b」——
-# 那是因为规则当时连资源标题一起匹配，作品名「Ani ni Tsukeru Kusuri wa Nai」
-# 里的 Ani 会把别的组认成 ANi。现在 in: group 只看组名，标题根本不参与，
-# 这个坑就不存在了。
+# ANi / Judas / ASW / DKB 这几个名字很短，锚在组名开头（^ani\b / ^judas\b）：
+# 叫 AnimeGarden 的组不会被 ^ani\b 命中（ani 后面是 m，不是词边界）。
+# `^` 在这里安全，靠的是 in: group 逐个组名试，不跟作品名拼在一起 ——
+# 所以作品名「Ani ni Tsukeru Kusuri wa Nai」里的 Ani 不会被误当成组名。
+#
+# 想给某一档里的某个组优先，拆一档就行，两个例子：
+#   400 档里要 ToonsHub 先上：priority 写 410
+#     - {name: ToonsHub·先上, match: '(?i)toonshub', priority: 410, scope: both, in: group}
+#   500 档里要 ToonsHub 先上（没中文时也是它）：priority 写 475
+#     - {name: ToonsHub·兜底优先, match: '(?i)toonshub', priority: 475, scope: both, in: group}

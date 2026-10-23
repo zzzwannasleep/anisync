@@ -30,13 +30,14 @@ AniSync/
   AniSync              程序本体（windows 是 AniSync.exe，macOS 是 AniSync.app）
   config.example.yaml
   README.md
-  01-… 02-… 03-…       samples/ 里的文件摊平到根目录
-  subs.yaml raws.yaml deny.yaml
+  01-… 02-… 03-… 04-…  samples/ 里的文件摊平到根目录
+  subs.yaml raws.yaml all.yaml deny.yaml
 ```
 
-样例摊平而不是放进 `samples/` 子目录，是因为样例之间按相对路径互相引用
-（03 号配置写着 `primaryFiles: [subs.yaml, raws.yaml]`）—— 摊平之后
-「把 03 复制成 config.yaml」这一步才直接可用。
+样例摊平而不是放进 `samples/` 子目录，是因为样例之间按相对路径互相引用 ——
+01 引用 `raws.yaml` + `deny.yaml`；02 引用 `subs.yaml` + `deny.yaml`；03 三个都引用
+（`primaryFiles: [raws.yaml, subs.yaml]`，raws 在前）；04 引用 `all.yaml` + `deny.yaml`。
+摊平之后「把 03 复制成 config.yaml」这一步才直接可用。
 
 用 Go 写而不是 `zip` / `Compress-Archive`，有两个原因：
 

@@ -1,0 +1,85 @@
+# AniSync 配置样例 04：全收
+#
+# 适合：这部番剧我不想挑 —— 除了黑名单里的，其他全都要。
+# 不管它是压制组、放流组还是字幕组，有没有中文，内嵌还是内封，来了就收。
+#
+# 和 01/02/03 的区别只有一条：**规则里没有任何偏好**。
+#   all.yaml 只有一条「谁都行」：in: group 逐个组名试，.+ 匹配任意非空组名，全部同一档。
+#   于是谁当主 RSS、谁进副 RSS，全交给引擎兜底（发布条数 -> 站点顺序 -> 组名）。
+#   deny.yaml 照旧生效：点过名的组一个都不要。
+#
+# maxStandby 为什么是 12：照着真实数据定的。
+#   实测目标实例 121 部番剧：aniBT + AnimeGarden 一共 947 个候选
+#   （每部中位数 8 个、最多 24 个）。但引擎会先按组名去重 ——
+#   同一个组在两个站点出现只算一个 —— 去重后每部需要 12 条副 RSS 上限的只有 2 部。
+#   所以 12 基本等于「全都收进来」。别盲目调大 —— ANI-RSS 抓每个副 RSS 之间要
+#   sleep 1 秒（ItemsUtil.java:54），12 条副 RSS 就是每条订阅每轮多花 12 秒。
+#
+# ★ 这个样例能收到什么程度，取决于 ANI-RSS 自己的两个全局开关，不是订阅能决定的。
+#   实测 https://ass.902541.xyz/ 的取值和后果：
+#
+#   1) standbyRss = true（目标实例：开）
+#      关着的话 standbyRssList 完全不参与下载，只下主 RSS 那一个组 —— 全收就成了空话。
+#
+#   2) coexist = false（目标实例：关）
+#      同一集只留一份：主 RSS 有就用主的，副 RSS 只补主 RSS 缺的集。
+#      所以这份配置的实际效果是「**每集至少一份，主组优先**」。
+#      想要「每集每个组各一份」的真·全收，去 ANI-RSS 设置里把「多字幕组共存」打开。
+#
+#   还有一件不归我们管：目标实例开着全局排除（enabledExclude = true，
+#   排除 720p / 集数区间 / 合集 / 特别篇），这些条目在实例侧就被丢掉了，
+#   订阅里写什么都收不到。
+#
+# 想让「全收」也有个先后（比如主 RSS 优先给有中文的），把偏好文件放在兜底前面就行：
+#   primaryFiles: [raws.yaml, subs.yaml, all.yaml]   # 先按放流/版本规则排
+# 匹配是「按声明顺序，第一条命中的生效」：前面点过名的组按前面的档位，
+# 没被点名的全部落到 all.yaml 那条「谁都行」，照样全收进副 RSS。
+#
+# 怎么用：
+#   1. 整份复制成程序同目录的 config.yaml（all.yaml 和 deny.yaml 一起拿）
+#   2. 改下面 instances 里的 baseUrl 和 apiKey
+#   3. AniSync check / plan / sync -y
+
+listen: 127.0.0.1:51837
+# proxy: http://127.0.0.1:7890
+
+sources:
+  instance: ""
+  # 全收就把站点都开着：多一家多一批候选。stopOnFirstMatch 必须是 false，
+  # 否则第一个有结果的站点就停了，后面的站点根本不会爬。
+  order: [anibt, animegarden, nyaa]
+  stopOnFirstMatch: false
+  timeoutSeconds: 25
+  cacheMinutes: 720
+
+rules:
+  # 副 RSS 上限：12 条基本覆盖真实数据里的全部组（见上面）。
+  maxStandby: 12
+
+  # all.yaml 就是那条「谁都行」：.+ 匹配任意非空组名，scope: both 让主副 RSS 都参与。
+  # 它命中所有候选，所以「点名制」等于不设限 —— 每个组都算被点过名。
+  primaryFiles: [all.yaml]
+  denyFiles: [deny.yaml]
+
+  deny:
+    # 个人口味放这里，和共享的 deny.yaml 分开。
+    # 合集几百集会把追番列表搞乱；要合集就删掉这一行。
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    apiKey: ${ANISYNC_KEY}
+
+targets: []
+
+sync:
+  intervalMinutes: 0
+  preview: false
+  addMissing: false
+
+discover:
+  enabled: true
+  sources: [yuc]
+  limit: 50
+  enable: false

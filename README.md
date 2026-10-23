@@ -27,9 +27,9 @@ AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必�
 **选哪个组**
 
 - **规则驱动**：正则匹配 + 优先级，可排字幕组，也可排简日内嵌 / 繁日内嵌 / 简繁日内封等字幕类型
-- **主副分工**：主 RSS 用字幕组规则、副 RSS 用放流组规则，由规则的 `scope` 决定
+- **主副分工**：主 RSS 按版本档挑（`subs.yaml`）、副 RSS 用放流组规则（`raws.yaml`），由规则的 `scope` 决定
 - **副 RSS 点名制**：只有被 `scope: standby` 或 `scope: both` 规则点过名的组才进副 RSS，没点名的一律不要 —— 不点名就按发布条数兜底的话，会被搬运组和实例侧的伪组名刷满
-- **组名单外置**：字幕组排名、放流组排名、黑名单各一个 YAML，主配置只留引用；换口味只换文件，主配置不用动
+- **规则外置**：字幕版本分档、放流组排名、黑名单各一个 YAML，主配置只留引用；换口味只换文件，主配置不用动
 - **组名写一个就够**：规则的 `in: group` 只看组名，而组名这一侧同时包含「选组界面上的显示名」与「种子标题里印出来的名字」。两者有时并不一样（`猎户发布组` / `[猎户压制部]`），但写哪一个都能命中 —— 别名跟着候选现算，不用人去核对
 - **两家站点互补**：AniBT 走实例接口（字幕组维度、API 齐全、带热度权重），Nyaa 由 AniSync 自己按关键字搜索（资源覆盖最广）。默认只跑这两家
 
@@ -42,7 +42,7 @@ AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必�
 
 **怎么用**
 
-- **开箱即用**：`samples/` 里有三份完整配置可直接抄 —— 只追放流 / 只要字幕组 / 字幕组加放流
+- **开箱即用**：`samples/` 里有四份完整配置可直接抄 —— 只追放流 / 只要字幕组 / 字幕组加放流 / 全收
 - **设置页能干活**：搜 Bangumi 选番剧（带封面与简介）直接加订阅，不用手抄 bgm 链接；深色 / 浅色双模式；每个区块各自带保存按钮，改哪块存哪块
 - **多形态**：命令行、本地 Web 设置页、Windows 通知区域托盘、macOS 菜单栏应用 —— 同一个程序，按需要挑一种跑法
 - **一个文件夹就是全部**：单一二进制、无运行时依赖；配置与缓存都写在程序同目录，删掉文件夹即卸载干净
@@ -59,11 +59,13 @@ AniSync/
   AniSync.app             macOS 是菜单栏应用（程序本体在它里面）
   config.example.yaml     配置示例
   README.md               样例说明：怎么改、怎么用
-  01-只追放流.yaml          三份现成配置，挑一份复制成 config.yaml 就能跑
+  01-只追放流.yaml          四份现成配置，挑一份复制成 config.yaml 就能跑
   02-只要字幕组.yaml
   03-字幕组加放流.yaml
-  subs.yaml               组名单：字幕组 / 压制组排名
-  raws.yaml               组名单：放流组排名
+  04-全收.yaml
+  subs.yaml               字幕版本分档：简繁日内封 / 简日内嵌 / 繁日内嵌
+  raws.yaml               放流组排名（按「这个组这部番剧有没有中文」分档）
+  all.yaml                「谁都行」：全收样例用，也是任何偏好名单的兜底
   deny.yaml               黑名单
 ```
 
@@ -135,31 +137,41 @@ Windows 下不带参数双击只打印用法；常驻请执行 `AniSync.exe tray
 
 ## 样例配置
 
-`samples/` 里有三份完整配置 —— 追新番只有三种情况，整份复制成 `config.yaml`
+`samples/` 里有四份完整配置 —— 追新番只有四种情况，整份复制成 `config.yaml`
 改掉 `instances` 就能用：
 
 | 样例 | 主 RSS | 副 RSS | 适合谁 |
 | --- | --- | --- | --- |
 | [01-只追放流](samples/01-只追放流.yaml) | 放流组 | 另一个放流组 | 不要中文字幕，只要第一时间拿到片子 |
-| [02-只要字幕组](samples/02-只要字幕组.yaml) | 字幕组 | 不配 | 只认一家字幕，缺集宁可等 |
-| [03-字幕组加放流](samples/03-字幕组加放流.yaml) | 字幕组 / 压制组 | 放流组 | 想要中文字幕，又不愿意为了等字幕组漏集 |
+| [02-只要字幕组](samples/02-只要字幕组.yaml) | 按版本挑中文字幕 | 不配 | 只认中文软字幕，缺集宁可等 |
+| [03-字幕组加放流](samples/03-字幕组加放流.yaml) | 字幕组（按版本） | 放流组 | 想要中文字幕，又不愿意为了等字幕组漏集 |
+| [04-全收](samples/04-全收.yaml) | 谁都行 | 其余全部 | 不挑，除了黑名单全都要 |
 
-组名单与黑名单是**单独的文件**，主配置只留引用（复制时一起拿，放同一个目录）：
+规则文件与黑名单是**单独的文件**，主配置只留引用（复制时一起拿，放同一个目录）：
 
 | 文件 | 是什么 |
 | --- | --- |
-| [samples/subs.yaml](samples/subs.yaml) | 字幕组 / 压制组排名，`scope: main` |
-| [samples/raws.yaml](samples/raws.yaml) | 放流组排名，`scope: both`，priority 从 300 起 |
+| [samples/subs.yaml](samples/subs.yaml) | 字幕**版本**分档（简繁日内封 100 > 简日内嵌 200 > 繁日内嵌 300），`scope: main`、`in: title` |
+| [samples/raws.yaml](samples/raws.yaml) | 放流**组**排名（有中文的 ToonsHub / Nix-Raws 优先，400 / 450 / 500 三档），`scope: both` |
+| [samples/all.yaml](samples/all.yaml) | 「谁都行」（`match: '.+'`，`scope: both`）—— 04 号全收用它，也是任何偏好名单的兜底 |
 | [samples/deny.yaml](samples/deny.yaml) | 黑名单：明确不要的组 |
+
+四份样例各自要哪些文件：01 要 `raws.yaml` + `deny.yaml`；02 要 `subs.yaml` + `deny.yaml`；
+03 要 `raws.yaml` + `subs.yaml` + `deny.yaml`（顺序就是 raws 在前）；04 要 `all.yaml` + `deny.yaml`。
 
 ```yaml
 rules:
   maxStandby: 1                            # 保留几条副 RSS；默认 1
-  primaryFiles: [subs.yaml, raws.yaml]     # 组名单
+  primaryFiles: [raws.yaml, subs.yaml]     # 规则文件：顺序就是匹配顺序
   denyFiles: [deny.yaml]                   # 黑名单
 ```
 
-名单里每条规则都写了 `in: group`：只看组名，不看资源标题。写 ANI-RSS 选组界面上显示的名字就行 ——
+`primaryFiles` 的顺序就是匹配顺序：规则按声明顺序匹配，**第一条命中的生效**，`priority` 数字只决定同一档内的先后。
+03 号样例把 `raws.yaml` 写在前面，点过名的放流组先落进 400 / 450 / 500 档，不会再往下掉进 `subs.yaml` 的版本档 ——
+否则 Nix-Raws 标题里的 `[简繁内封]` 会和 LoliHouse 同档，再靠发布条数挤掉字幕组（实测发生过 6 部）。
+
+`subs.yaml` 按**版本**排（`in: title`，读标题里的 `[简繁内封]` / `[简日内嵌]` 这类标签）；
+`raws.yaml` 按**组**排。按组排时写 ANI-RSS 选组界面上显示的名字就行 ——
 种子标题里印出来的名字会自动算成这个组的别名（`猎户发布组` / `[猎户压制部]`），写哪个都能命中。
 
 [samples/README.md](samples/README.md) 讲了怎么挑、怎么改，以及怎么把样例丢给 AI 帮你改。
@@ -173,18 +185,23 @@ listen: 127.0.0.1:51837          # 设置页端口，五位数高位端口
 
 sources:
   instance: ""                   # 站点数据取自哪个实例；留空 = 第一个启用的实例
-  order: [anibt, nyaa]           # 两家互补；animegarden / mikan 也能写，但和 anibt 同类
+  order: [anibt, nyaa]           # 默认两家；animegarden 是另一批组，要字幕组就加进来
   cacheMinutes: 720              # 站点数据缓存时长；0 = 不缓存
 
 rules:
   maxStandby: 1                  # 保留几条副 RSS；默认 1
   primary:
-    - {name: 简日内嵌, match: '(?i)简日|CHS', priority: 10, scope: main, in: title}
-    # 排字幕组用 in: group：只看组名。写选组界面上显示的名字就行，
+    # 按版本分档：简繁日内封 > 简日内嵌 > 繁日内嵌。规则按声明顺序匹配，
+    # 第一条命中的生效 —— 简繁必须排在繁日前，否则 [简繁日内封] 会先落进繁日档。
+    - {name: 简繁日内封, match: '(?i)简繁|簡繁|CH[ST]&CH[ST]', priority: 100, scope: main, in: title}
+    - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|简中|簡中|\bCHS\b|\bGB\b|GB_CN', priority: 200, scope: main, in: title}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|繁中|\bCHT\b|BIG5', priority: 300, scope: main, in: title}
+    # 按组排用 in: group：只看组名。写选组界面上显示的名字就行，
     # 种子标题里的名字（[猎户压制部]）会自动算成别名，写哪个都能命中。
+    # 40 比版本档都小，所以这条会盖过上面的版本分档 —— 想给某个组开小灶就这么写。
     - {name: 猎户发布组, match: '(?i)猎户发布组', priority: 40, scope: main, in: group}
-  # 组名单与黑名单放外置文件，主配置只留引用 —— 换口味只改文件，这里一个字不用动
-  primaryFiles: [subs.yaml, raws.yaml]   # 字幕组走 main，放流组走 both
+  # 规则文件与黑名单放外置文件，主配置只留引用 —— 换口味只改文件，这里一个字不用动
+  primaryFiles: [raws.yaml, subs.yaml]   # 顺序即匹配顺序：先放流组定档，再按版本分档
   denyFiles: [deny.yaml]         # 黑名单：命中即剔除
   deny:
     - {match: '合集|BDRip', why: 不要合集}   # 个人口味留在主配置里
@@ -224,6 +241,7 @@ targets:
 - `in` 决定规则匹配什么：`group` 只看组名，`title` 只看资源标题，`any`（默认）两者一起看。排字幕组用 `group`，排字幕类型用 `title`
 - 未命中任何规则的候选排在命中者之后，按发布热度、站点顺序、名称兜底
 - 同一字幕组在不同站点的镜像按名称去重，仅保留最优者，因此副 RSS 中是不同字幕组而非同一组的多个镜像
+- `maxStandby` 决定每条订阅保留几条副 RSS（默认 1）。ANI-RSS 抓每个副 RSS 之间要 `sleep 1` 秒（`ItemsUtil.java:54`），所以 N 条副 RSS = 每条订阅每轮多花 N 秒
 - `targets` 里按番剧规定 `season` / `offset` / `standbyOffset`：`season` 按番剧给一个值（该番剧的所有订阅共用），`offset` 管主 RSS、`standbyOffset` 管副 RSS。匹配先按 `bgmId` 精确匹配，再按 `title` 对订阅标题做包含匹配（订阅标题形如「冰之城墙 (2026) [tmdbid=283428]」，写「冰之城墙」即可）。同一份 `targets` 兼作新增列表：加 `--add-missing` 时，实例里没有的番剧按规则新建，默认 `enable: false`
 - `season` / `offset` / `standbyOffset` 留空时 AniSync 不碰订阅里已有的值。ANI-RSS 会按每个 RSS 的实际集数自动推断偏移，因此默认留空；只有确实要统一指定时才写全局值
 - `enabled: false` 可临时停用某个实例
@@ -266,14 +284,14 @@ AniSync probe -site anibt -bgm 517106
    实例里还没有的，被当成自动生成的 `targets` 进入下一步
 2. 调用 `listAni` 读取各实例的订阅
 3. 按 `sources.order` 依次获取候选 RSS；AniBT 走实例接口，Nyaa 走关键字搜索
-4. 应用规则过滤与排序：主 RSS 取首项，副 RSS 由 `scope: standby` 规则排序后取前若干项
+4. 应用规则过滤与排序：主 RSS 取首项，副 RSS 由 `scope: standby` / `both` 规则排序后取前若干项
 5. 与实例现状比对，仅将差异写回；新增的订阅先经 `rssToAni` 由实例解析，再按配置决定是否启用
 
 写回使用 ANI-RSS 的 `setAni` 接口。该接口为整对象覆盖语义，AniSync 始终回传完整对象，以免清空未修改的字段。
 
 ## 站点适配
 
-默认只跑前两行。后两行仍可用（老配置照常生效），只是不再进默认顺序 —— 它们和 AniBT 走同一类实例接口，换不回额外覆盖面。
+默认只跑前两行。后两行仍可用（老配置照常生效），只是不再进默认顺序 —— 不过 AnimeGarden 不是 AniBT 的备份，而是**另一批组**：实测 121 部番剧里，只在它那边出现的「番剧 × 字幕组」组合有 111 个（喵萌奶茶屋 16、猎户发布组 9 …），只在 AniBT 出现的多是放流组（ToonsHub 60 部）。要中文字幕就把 AnimeGarden 写进 `sources.order`（02 / 03 / 04 号样例都写了）。
 
 | 站点 | 数据来源 | 产出形式 |
 | --- | --- | --- |

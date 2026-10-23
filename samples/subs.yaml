@@ -1,48 +1,53 @@
-# AniSync 字幕组 / 压制组排名
+# AniSync 字幕分档：按「版本」排，不按组名排。
 #
-# scope: main —— 只参与挑主 RSS。副 RSS 由 raws.yaml 负责。
-# in: group   —— 这条规则只看组名，不看资源标题。
+# scope: main —— 只参与挑主 RSS。副 RSS 交给 raws.yaml。
+# in: title   —— 只看资源标题里的版本标签，不看组名。
 #
-# 组名怎么写：**写 ANI-RSS 选组界面上显示的那个名字就行。**
-# AniSync 拿到的候选本来就带这个名字；同时它还会把资源标题方括号里印出来的名字
-# 一并当成这个组的别名 —— 所以显示名和种子名对不上时（猎户发布组 / [猎户压制部]），
-# 写哪一个都能命中，不用两个都写，也不用手工核对。
+# 分档（priority 数字越小越优先）：
 #
-# 拿不准某个组叫什么：在 ANI-RSS 里选中它，界面上显示的就是它的名字。
+#   100  简繁日内封   简繁双语（多半还带日文），软字幕。信息最全，排最前。
+#   200  简日内嵌     简体 + 日文，硬字幕。
+#   300  繁日内嵌     繁体 + 日文，硬字幕。
 #
-# in: group 还顺带解决了短名字的问题。ANi / Judas / ASW / DKB 这类名字，
-# 以前和标题混在一起匹配时会被作品名误伤（「Ani ni Tsukeru Kusuri wa Nai」里的 Ani），
-# 只能写成 ^ani\b|\[ani\] 去绕；现在只看组名，^ani\b 就够了。
+# 为什么按版本排、不按组名排：
 #
-# 顺序就是偏好，数字越小越优先。这份名单只是一个起点 ——
-# **你的组做哪些版本（简日内嵌 / 繁日内嵌 / 简繁内封 / 多语），
-# 在 ANI-RSS 里选中一个组就能看到**（它把每个组标题里出现过的标签组合列出来）。
-# 按你实际要的版本调整顺序即可，不用照抄这里的排法。
+#   一个组做哪个版本，是它自己的事，而且会变 —— 这季做简繁，下季可能只做简日。
+#   手抄一张「20 个组名 + 各自优先级」的表，等于替每个组维护「它现在做哪个版本」：
+#   组一改名、一换版本，表就错了，而且错得看不出来（它不会报错，只会安静地挑错组）。
+#   版本标签本来就印在资源标题里（[简繁日内封] / [简日内嵌] / [CHS&CHT&JP&EN&KO]），
+#   直接读它，既准确又不用维护 —— 换了版本，下一次爬取自动就跟上了。
+#
+# 分档是按「这个组最近发过的版本里最好的那个」算的：
+#   候选带着这个组这部番剧最近的 12 条资源标题，规则把它们拼在一起匹配。
+#   所以绿茶字幕组同时发过 [简繁日内封] 和 [简日内嵌] 时，它按 100 档参选。
+#   至于同一集到底下哪一版，由 ANI-RSS 订阅里的匹配规则自己决定 —— 我们不插手。
+#
+# 同一档里怎么决出先后：
+#   引擎按「发布条数 -> 站点顺序 -> 组名」兜底，也就是同档里谁的资源多谁上。
+#   想在同档里给某个组优先，在它前面插一条 in: group 的规则，priority 填档内小值：
+#     - {name: LoliHouse 优先, match: '(?i)lolihouse', priority: 110, scope: main, in: group}
+#   （注意这样写会把这个组提到 110，比 200/300 档都靠前 —— 它就不再受版本分档约束了。）
+#
+# 简繁内嵌（简繁双语但硬字幕）也落进 100 档。真要把内封严格排在前面，
+# 在 100 和 200 之间插一条只认 内封 的规则，priority 写 150。
 
-- {name: LoliHouse,     match: '(?i)lolihouse',                  priority: 10,  scope: main, in: group}
-- {name: 桜都字幕组,     match: '(?i)sakurato|桜都|樱都',           priority: 20,  scope: main, in: group}
-- {name: 喵萌奶茶屋,     match: '(?i)喵萌奶茶屋|喵萌|nyamoe',        priority: 30,  scope: main, in: group}
-- {name: 绿茶字幕组,     match: '(?i)绿茶字幕组|綠茶字幕組',          priority: 40,  scope: main, in: group}
-- {name: 北宇治字幕组,   match: '(?i)北宇治',                       priority: 50,  scope: main, in: group}
-- {name: 三明治摆烂组,   match: '(?i)三明治摆烂组|三明治擺爛組',      priority: 60,  scope: main, in: group}
-- {name: 猎户发布组,     match: '(?i)猎户',                         priority: 70,  scope: main, in: group}
-- {name: 拨雪寻春,       match: '(?i)拨雪寻春|撥雪尋春',             priority: 80,  scope: main, in: group}
-- {name: 悠哈璃羽字幕社, match: '(?i)悠哈璃羽',                     priority: 90,  scope: main, in: group}
-- {name: 银光字幕组,     match: '(?i)银光字幕组|銀光字幕組',          priority: 100, scope: main, in: group}
-- {name: 雪飄工作室,     match: '(?i)雪飄|雪飘|flsnow',             priority: 110, scope: main, in: group}
-- {name: 亿次研同好会,   match: '(?i)亿次研|億次研|billion meta lab', priority: 120, scope: main, in: group}
-- {name: MingYSub,      match: '(?i)^mingy',                      priority: 130, scope: main, in: group}
-- {name: SweetSub,      match: '(?i)sweetsub',                    priority: 140, scope: main, in: group}
-- {name: 黑白字幕组,     match: '(?i)黑白字幕组|黑白字幕組',          priority: 150, scope: main, in: group}
-- {name: TSDM字幕组,     match: '(?i)tsdm',                        priority: 160, scope: main, in: group}
-- {name: 银色子弹字幕组, match: '(?i)银色子弹|銀色子彈',              priority: 170, scope: main, in: group}
-- {name: 极影字幕社,     match: '(?i)极影|極影',                     priority: 180, scope: main, in: group}
-- {name: 豌豆字幕组,     match: '(?i)豌豆',                         priority: 190, scope: main, in: group}
-- {name: 樱桃花字幕组,   match: '(?i)樱桃花|櫻桃花',                  priority: 200, scope: main, in: group}
-- {name: 冷番补完字幕组, match: '(?i)冷番补完',                      priority: 210, scope: main, in: group}
+# 每档的正则都是照着真实标题里的标签写的，实测覆盖到这些写法：
+#   100 档：简繁内封 / 简繁日内封 / 简繁内封字幕 / CHS&CHT&EN / CHS&CHT&JP&EN&KO
+#   200 档：简日内嵌 / 简日双语内嵌 / 简体内嵌 / [简体] / [GB] / [GB_CN] / [简中] / CHS
+#   300 档：繁日內嵌 / 繁体内嵌 / [繁體] / [BIG5] / [繁中] / CHT
+# GB / BIG5 / 简中 / 繁中 是老牌字幕社（爱恋、极影这些）的习惯写法，少了它们
+# 这些组会被判成「认不出类型」掉到 1000 档，白排在别人后面。
+# GB_CN 要单独写：`\bGB\b` 里的 \b 在 GB_CN 上不成立（下划线算词字符）。
 
-# 没被点名的组不会被删掉，只是排在这些之后（未命中规则的基准优先级是 1000）。
-# 想让某个组彻底出局，写进 deny.yaml。
+- {name: 简繁日内封, match: '(?i)简繁|簡繁|CH[ST]&CH[ST]', priority: 100, scope: main, in: title}
+- {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|简中|簡中|\bCHS\b|\bGB\b|GB_CN', priority: 200, scope: main, in: title}
+- {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|繁中|\bCHT\b|BIG5', priority: 300, scope: main, in: title}
+
+# 一个版本标签都认不出来的组不会消失，只是排在后面（引擎的基准优先级是 1000）。
+# 想让某个组彻底出局，写进 deny.yaml，不要靠调大 priority。
 #
-# 上面有几条写了简繁两种写法（绿茶字幕组|綠茶字幕組）—— 那不是「一个组的两个名字」，
-# 而是同一个名字的两种字形。别名机制对不上简繁，字不一样就得多写一个。
+# 两处已知的边界：
+#   1. 简繁两种字形都写了（简繁|簡繁）—— 同一个词的不同写法，正则不通用，只能都列上。
+#   2. 规则读的是整段标题文本，所以番剧自己的中文名也在里面。
+#      理论上「繁體字」这类名字会被 繁体 命中；实际数据里没出现过，
+#      真遇到了就把这一档的正则收紧成「方括号里的标签」。

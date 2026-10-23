@@ -1,8 +1,8 @@
 # AniSync 配置示例：复制为 config.yaml，与程序放在同一个目录。
 # 所有运行期文件都留在程序同目录：config.yaml 与 data/cache.json。
 #
-# 不想从零写的话，samples/ 目录里有三份现成的完整配置（只追放流 / 只要字幕组 /
-# 字幕组加放流），整份复制过来改掉 instances 就能用。
+# 不想从零写的话，samples/ 目录里有四份现成的完整配置（只追放流 / 只要字幕组 /
+# 字幕组加放流 / 全收），整份复制过来改掉 instances 就能用。
 
 # 本地设置页监听地址。用五位数高位端口，避开常见服务端口与系统动态端口区间。
 listen: 127.0.0.1:51837
@@ -22,8 +22,11 @@ sources:
   #   anibt  走实例的 aniBTGroup 接口，字幕组维度、API 齐全、带热度权重
   #   nyaa   由 AniSync 自己按关键字搜，资源覆盖最广，补 anibt 的盲区
   #
-  # animegarden / mikan 走的是和 anibt 同一类实例接口，多出来的两家换不回额外覆盖面，
-  # 所以不在默认值里。想加就自己写进来，仍然照常工作：
+  # animegarden / mikan 走的是和 anibt 同一类实例接口，但 animegarden 不是 anibt 的备份，
+  # 而是另一批组：实测 121 部番剧里，只在 animegarden 出现的「番剧 × 字幕组」组合有 111 个
+  # （喵萌奶茶屋 16、猎户发布组 9 …），只在 anibt 出现的多是放流组（ToonsHub 60 部）。
+  # 想按版本挑中文字幕就把它写进 order（样例 02/03/04 都写了）；只追放流可以不加。
+  # 想加就自己写进来，仍然照常工作：
   #   - animegarden    # 走实例的 animeGardenGroup 接口
   #   - mikan          # 走实例的 mikanGroup 接口
   order:
@@ -36,7 +39,9 @@ sources:
 
 rules:
   # 每个订阅保留几条副 RSS。默认 1：多数人只要一个备胎。
-  # 想「所有版本都收」就调大（比如 3），并在白名单文件里把想要的组都点一遍名。
+  # 想「所有版本都收」就调大（04 号样例给的是 12），并在规则里把想要的组都点一遍名。
+  # 注意成本：ANI-RSS 抓每个副 RSS 之间要 sleep 1 秒（ItemsUtil.java:54），
+  # 所以 N 条副 RSS = 每条订阅每轮多花 N 秒。
   maxStandby: 1
 
   # 正则 + 优先级，数字越小越优先；按声明顺序匹配，第一条命中的生效。
@@ -45,23 +50,24 @@ rules:
   #        排字幕组用 group —— 组名这一侧同时含「选组界面上的显示名」与
   #        「种子标题方括号里的名字」，所以两个名字写哪个都能命中，不用都写。
   primary:
-    # 字幕类型优先级。注意简繁要排在繁日前面，否则「简繁日」会先被繁日规则吃掉。
-    - {name: 简日内嵌,   match: '(?i)简日|简体|CHS',        priority: 10, scope: main, in: title}
-    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 20, scope: main, in: title}
-    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 30, scope: main, in: title}
-    # 字幕组优先级：写选组界面上显示的名字即可
-    - {name: 桜都字幕组, match: '(?i)sakurato|桜都',        priority: 40, scope: main, in: group}
-    - {name: LoliHouse,  match: '(?i)lolihouse|萝莉屋',     priority: 50, scope: main, in: group}
-    # 副 RSS 的放流组排名不写在这里，放到白名单文件（见下面的 primaryFiles）。
+    # 字幕版本分档。规则按声明顺序匹配，第一条命中的生效 ——
+    # 简繁（100）必须排在繁日（300）前面：`[简繁日内封]` 同时命中 `简繁` 与 `繁日`，
+    # 排反了就会先落进繁日档。
+    - {name: 简繁日内封, match: '(?i)简繁|簡繁|CH[ST]&CH[ST]', priority: 100, scope: main, in: title}
+    - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|简中|簡中|\bCHS\b|\bGB\b|GB_CN', priority: 200, scope: main, in: title}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|繁中|\bCHT\b|BIG5', priority: 300, scope: main, in: title}
+    # 放流组的排名不写在这里，放到 samples/raws.yaml：按「这个组这部番剧有没有中文」
+    # 分 400 / 450 / 500 三档（scope: both）。
 
-  # 白名单与黑名单各放一个文件，不写死在主配置里 —— 换口味只换文件，主配置不用动。
+  # 规则文件与黑名单各放一个文件，不写死在主配置里 —— 换口味只换文件，主配置不用动。
   # 相对路径按本文件所在目录解析；文件里是裸列表，和 primary / deny 同构；
-  # 顺序是「内联在前、文件按声明顺序在后」。文件读不出来会直接报错，不会静默跳过。
-  #   primaryFiles  白名单：副 RSS 只放这里点过名的组，顺序就是优先级
+  # 顺序是「内联在前、文件按声明顺序在后」，也就是匹配顺序 ——
+  # 规则按声明顺序匹配，第一条命中的生效。文件读不出来会直接报错，不会静默跳过。
+  #   primaryFiles  规则文件：点过名的组才进副 RSS；文件顺序就是匹配顺序
   #   denyFiles     黑名单：命中即整个剔除
-  # 完整例子见 samples/subs.yaml（字幕组排名）、samples/raws.yaml（放流组排名）
+  # 完整例子见 samples/subs.yaml（字幕版本分档）、samples/raws.yaml（放流组排名）
   # 与 samples/deny.yaml（黑名单）。
-  # primaryFiles: [subs.yaml, raws.yaml]
+  # primaryFiles: [raws.yaml, subs.yaml]
   # denyFiles: [deny.yaml]
 
   # 命中即丢弃该候选。比调 priority 更狠：调 priority 只是排后面，deny 是直接不要。

@@ -1,13 +1,16 @@
-# AniSync 配置样例 02：只要字幕组
+# AniSync 配置样例 02：只要中文字幕，不配副 RSS
 #
-# 适合：只认中文字幕组，主 RSS 定死一个字幕组，**不配副 RSS**。
+# （文件名沿用了「只要字幕组」。规则是按**版本**挑的，不看组名，
+#   所以标题里带官方中文软字幕的放流组（Nix-Raws 的 [简繁内封]）也会参选 ——
+#   它给的是中文字幕，不是生肉。真不想要就把那几家写进 deny.yaml。）
 #
-# 主 RSS 用 subs.yaml 里排第一的（LoliHouse）。
+# 适合：只认中文软字幕，缺集就等，**不配副 RSS**。
+#
+# 主 RSS 按 subs.yaml 的版本分档挑：简繁日内封 > 简日内嵌 > 繁日内嵌。
 # 这份配置里没有任何 scope: standby 的规则 —— 按 AniSync 的「点名制」，
 # 没被点过名的组一律不进副 RSS，所以写回实例时 standbyRssList 会是空的。
 #
-# 什么时候该这么配：你只认这一家的字幕（比如只看简繁内封，别的版本一概不要），
-# 缺集就等它补，不需要备胎。缺集时宁可空着也不要一个风格不同的版本。
+# 什么时候该这么配：缺集时宁可空着，也不要一个风格不同的版本当备胎。
 #
 # 想要「主字幕组 + 副放流组」的组合，用 03 号样例。
 #
@@ -16,16 +19,19 @@
 #   2. 改下面 instances 里的 baseUrl 和 apiKey
 #   3. AniSync check / plan / sync -y
 #
-# 怎么改：subs.yaml 里的顺序就是偏好。组名怎么写见 subs.yaml 开头。
+# 怎么改：subs.yaml 里的数字就是版本档位。分档依据见 subs.yaml 开头。
 
 listen: 127.0.0.1:51837
 # proxy: http://127.0.0.1:7890
 
 sources:
   instance: ""
-  # 只用 anibt 也够 —— 这份配置只认字幕组，而字幕组基本都在 anibt 上。
-  # 想多一层覆盖面就把 nyaa 加回来。
-  order: [anibt, nyaa]
+  # anibt 和 animegarden 是两批不同的组，不是「一层套一层」，两个都要开。
+  # 实测同一批番剧：只在 animegarden 出现的字幕组组合有 111 个
+  # （喵萌奶茶屋 16、猎户发布组 9、悠哈璃羽字幕社 7、爱恋字幕社 5、极影字幕社 4 …），
+  # 只在 anibt 出现的多是放流组（ToonsHub 60 部）。只开 anibt 会漏掉一大批字幕组。
+  # nyaa 侧几乎全是放流组，只要字幕就不用开。
+  order: [anibt, animegarden]
   stopOnFirstMatch: false
   timeoutSeconds: 25
   cacheMinutes: 720
