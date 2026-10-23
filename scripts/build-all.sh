@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 交叉编译全部目标平台（macOS / Linux 上执行）。
+# 交叉编译全部目标平台，并把每个平台打成一个自包含的 zip（macOS / Linux 上执行）。
 # 在 macOS 上会为 darwin 目标打开 cgo 并额外产出 .app；在 Linux 上 darwin 目标为纯 Go（无菜单栏图标）。
 set -euo pipefail
 
@@ -28,8 +28,15 @@ build() {
 
   printf '%-16s OK  %5s  cgo=%s  %.1fs\n' "${os}/${arch}" "$size" "$cgo" "$(echo "$end - $start" | bc)"
 
+  # 发布物一律是 zip：解压出来是一个 AniSync/ 文件夹
+  local platform="$os"
+  [[ "$os" == "darwin" ]] && platform="macos"
+
   if [[ "$os" == "darwin" && "$cgo" == "1" ]]; then
     bash scripts/package-macos.sh "$out" "$version" "$arch"
+    go run ./scripts/pack -version "$version" -os "$platform" -arch "$arch" -app dist/AniSync.app
+  else
+    go run ./scripts/pack -version "$version" -os "$platform" -arch "$arch" -bin "$out"
   fi
 }
 
@@ -39,9 +46,8 @@ for target in "windows amd64" "windows arm64" "darwin amd64" "darwin arm64" "lin
 done
 
 echo
-if [[ "$host_os" == "Darwin" ]]; then
-  echo "产物在 dist/（darwin 已包含 .app 菜单栏应用）。"
-else
-  echo "产物在 dist/。注意：本机不是 macOS，darwin 产物为纯 Go 构建，不含原生菜单栏图标。"
-  echo "需要菜单栏版本请在 macOS 上执行本脚本，或使用 CI 产出的 AniSync-<版本>-macos-*.app.zip。"
+echo "产物在 dist/：每个平台一个 zip，解压出来是一个自包含的 AniSync/ 文件夹。"
+if [[ "$host_os" != "Darwin" ]]; then
+  echo "注意：本机不是 macOS，darwin 产物为纯 Go 构建，不含原生菜单栏图标。"
+  echo "需要菜单栏版本请在 macOS 上执行本脚本，或使用 CI 产出的 AniSync-<版本>-macos-*.zip。"
 fi

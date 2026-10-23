@@ -107,10 +107,30 @@ jobs:
           set -euo pipefail
           bash scripts/package-macos.sh "dist/AniSync-darwin-${{ matrix.goarch }}" "$VERSION" "${{ matrix.goarch }}"
 
+      # 发布物一律是 zip：解压出来是一个 AniSync/ 文件夹，程序本体、配置示例、
+      # 样例都在里面，运行期文件也只会写在这个文件夹里（见 internal/workdir）。
+      - name: package zip
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            go run ./scripts/pack -version "$VERSION" -os macos -arch "${{ matrix.goarch }}" \
+              -app dist/AniSync.app
+          else
+            suffix=""
+            if [ "${{ matrix.goos }}" = "windows" ]; then suffix=".exe"; fi
+            go run ./scripts/pack -version "$VERSION" -os "${{ matrix.goos }}" \
+              -arch "${{ matrix.goarch }}" \
+              -bin "dist/AniSync-${{ matrix.goos }}-${{ matrix.goarch }}${suffix}"
+          fi
+          ls -lh dist/*.zip
+
       - uses: actions/upload-artifact@v7
         with:
           name: AniSync-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
+          path: dist/*.zip
 
   # 构建全部通过后才发版：构建挂了不会白白吃掉一个版本号。
   release:
@@ -125,11 +145,26 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # 硬性门禁：发布目录里除了 zip 不许有别的东西。
+      # 「程序产生的文件只在解压出来的文件夹里」这条约定靠发布物形态兜底，
+      # 混进一个裸二进制就等于破了一半。
+      - name: 确认发布物全是 zip
+        run: |
+          set -euo pipefail
+          stray="$(find artifacts -type f ! -name '*.zip' -print)"
+          if [ -n "$stray" ]; then
+            echo "✗ 发布目录里有非 zip 文件："
+            echo "$stray"
+            exit 1
+          fi
+          echo "✓ $(find artifacts -type f -name '*.zip' | wc -l) 个发布物，全部是 zip"
+          ls -lh artifacts
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: AniSync v${{ needs.version.outputs.version }}
-          files: artifacts/*
+          files: artifacts/*.zip
           generate_release_notes: true
 
       - uses: actions/checkout@v7

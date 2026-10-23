@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# 把 darwin 二进制打成 .app（菜单栏应用）。
+# 把 darwin 二进制组装成 .app（菜单栏应用）。**只组装，不打包** ——
+# 打成 zip 交给 scripts/pack，这样各平台的发布物结构完全一致。
 #
 # 为什么必须打 .app：macOS 上裸二进制启动会被当成普通 GUI 程序，
 # 在 Dock 里多出一个图标；只有 Info.plist 里声明 LSUIElement=true
 # 才是纯粹的菜单栏应用。systray 本身不会设置激活策略。
 #
-# 用法：package-macos.sh <二进制路径> <版本号> <架构>
+# 用法：package-macos.sh <二进制路径> <版本号> <架构> [输出目录]
 set -euo pipefail
 
-binary="${1:?用法: package-macos.sh <二进制路径> <版本号> <架构>}"
+binary="${1:?用法: package-macos.sh <二进制路径> <版本号> <架构> [输出目录]}"
 version="${2:-0.0.0}"
 arch="${3:-$(uname -m)}"
+out_dir="${4:-dist}"
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-work="$(mktemp -d)"
-app="$work/AniSync.app"
-trap 'rm -rf "$work"' EXIT
-
+app="$out_dir/AniSync.app"
+rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$binary" "$app/Contents/MacOS/AniSync"
 chmod +x "$app/Contents/MacOS/AniSync"
@@ -40,11 +39,4 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-mkdir -p "$root/dist"
-out="$root/dist/AniSync-${version}-macos-${arch}.app.zip"
-rm -f "$out"
-(cd "$work" && zip -qry "$out" AniSync.app)
-
-echo "已生成 $out"
-echo "提示：未签名的 .app 首次打开会被 Gatekeeper 拦截，右键「打开」或在终端执行："
-echo "  xattr -dr com.apple.quarantine /Applications/AniSync.app"
+echo "已生成 $app（$arch，v$version）"

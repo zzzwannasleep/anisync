@@ -44,24 +44,64 @@ AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必�
 
 - **开箱即用**：`samples/` 里有三份完整配置可直接抄 —— 只追放流 / 只要字幕组 / 字幕组加放流
 - **设置页能干活**：搜 Bangumi 选番剧（带封面与简介）直接加订阅，不用手抄 bgm 链接；深色 / 浅色双模式；每个区块各自带保存按钮，改哪块存哪块
-- **多形态**：CLI、Windows 通知区域托盘、macOS 菜单栏应用、本地 Web 设置页
-- **单一二进制**：无运行时依赖；配置文件与缓存都留在程序同目录，删除目录即卸载干净
+- **多形态**：命令行、本地 Web 设置页、Windows 通知区域托盘、macOS 菜单栏应用 —— 同一个程序，按需要挑一种跑法
+- **一个文件夹就是全部**：单一二进制、无运行时依赖；配置与缓存都写在程序同目录，删掉文件夹即卸载干净
 
 ## 安装
 
-从 [Releases](https://github.com/zzzwannasleep/anisync/releases) 下载对应平台的文件，解压到任意目录。
+从 [Releases](https://github.com/zzzwannasleep/anisync/releases) 下载对应平台的 **zip**，解压得到一个
+`AniSync/` 文件夹：
 
-| 平台 | 文件 | 形态 |
+```
+AniSync/
+  AniSync.exe             Windows 的程序本体
+  AniSync                 Linux 的程序本体
+  AniSync.app             macOS 是菜单栏应用（程序本体在它里面）
+  config.example.yaml     配置示例
+  README.md               样例说明：怎么改、怎么用
+  01-只追放流.yaml          三份现成配置，挑一份复制成 config.yaml 就能跑
+  02-只要字幕组.yaml
+  03-字幕组加放流.yaml
+  subs.yaml               组名单：字幕组 / 压制组排名
+  raws.yaml               组名单：放流组排名
+  deny.yaml               黑名单
+```
+
+**程序只在这个文件夹里写文件** —— `config.yaml`、`data/cache.json`、`data/backup/`。
+不碰 `%APPDATA%`、`~/.config`、注册表，也不碰系统临时目录。删掉文件夹就等于卸载干净。
+
+| 平台 | 下载 | 里面是什么 |
 | --- | --- | --- |
-| Windows amd64 / arm64 | `AniSync-windows-*.exe` | 托盘 + CLI |
-| macOS arm64 / amd64 | `AniSync-<版本>-macos-*.app.zip` | 菜单栏应用 |
-| macOS arm64 / amd64 | `AniSync-darwin-*` | CLI |
-| Linux amd64 / arm64 | `AniSync-linux-*` | CLI + Web 设置页 |
+| Windows amd64 / arm64 | `AniSync-<版本>-windows-<架构>.zip` | `AniSync.exe` |
+| macOS arm64 / amd64 | `AniSync-<版本>-macos-<架构>.zip` | `AniSync.app`（菜单栏应用） |
+| Linux amd64 / arm64 | `AniSync-<版本>-linux-<架构>.zip` | `AniSync` |
+
+**发布物一律是 zip，没有裸二进制** —— 这样「解压出来的那个文件夹」就是程序全部的地盘。
+
+### 四种跑法
+
+同一个程序，四种用法。**CLI 与 Web 设置页每个平台都有；托盘是 Windows 的，菜单栏应用是 macOS 的。**
+
+| 跑法 | 怎么起 | 是什么 |
+| --- | --- | --- |
+| **CLI** | `AniSync <命令>` | `init` / `check` / `plan` / `sync` / `probe` 这些一次性命令。手跑、写脚本、丢给 cron 都用它 |
+| **Web 设置页** | `AniSync serve` | 在 `127.0.0.1:51837` 起一个本地网页：改配置、搜番剧加订阅、看计划。只监听本机，不对外 |
+| **托盘** | `AniSync tray` | Windows 通知区域常驻图标（打开设置页 / 立即同步 / 状态 / 退出）+ 按 `sync.intervalMinutes` 定时爬取。Web 设置页跟着一起起 |
+| **菜单栏应用** | 双击 `AniSync.app` | macOS 版的托盘：菜单栏图标 + 定时爬取 + Web 设置页。声明了 `LSUIElement`，不在 Dock 里占位 |
+
+几点：
+
+- **Linux 上没有托盘**：通知区域没有统一做法，Linux 就用 `AniSync serve` 加命令行。
+- **macOS 的 `.app` 里就是同一个二进制**，所以也能当 CLI 用：
+  `AniSync.app/Contents/MacOS/AniSync plan`
+- **托盘 / 菜单栏应用和 CLI 读写同一份 `config.yaml`**，两种跑法可以随时换。
+- **别把 `.app` 单独拖进 `/Applications`**：配置写在 `.app` 旁边，也就是解压出来的那个文件夹里。
+  整个 `AniSync/` 文件夹一起挪到你想放的地方就行。
 
 未签名的 `.app` 首次打开会被 Gatekeeper 拦截，可右键选择「打开」，或执行：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/AniSync.app
+xattr -dr com.apple.quarantine /path/to/AniSync/AniSync.app
 ```
 
 从源码构建见 [docs/build.md](docs/build.md)。
