@@ -531,6 +531,7 @@ func buildEngine(cfg *config.Config, maxStandby int) (*rules.Engine, error) {
 			Priority: rule.Priority,
 			Site:     rule.Site,
 			Scope:    rule.ScopeOr(),
+			In:       rule.InOr(),
 		})
 	}
 	denyRules := cfg.AllDeny()

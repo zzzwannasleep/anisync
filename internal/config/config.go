@@ -24,6 +24,20 @@ const (
 	ScopeBoth    = "both"
 )
 
+// 规则匹配位置：决定 match 正则作用在哪个字符串上。
+//
+// 分轴的理由和 ANI-RSS 一样 —— 组名是一个身份，字幕类型才是标题里的文字。
+// 两轴混在一起时，短组名会被作品名误伤（Ani ni Tsukeru Kusuri wa Nai 里的 Ani），
+// 只能靠 ^ani\b|\[ani\] 这种位置锚定去绕。
+const (
+	// InAny 是默认值，与分轴之前的行为逐字一致，老配置不受影响。
+	InAny = "any"
+	// InGroup 只看组名：显示名 + 种子标题里印出来的别名。
+	InGroup = "group"
+	// InTitle 只看资源标题：简日 / 繁日 / 内嵌 / 内封 / 1080p 这类版本信息。
+	InTitle = "title"
+)
+
 // DefaultListen 是本地设置页的默认监听地址。
 // 用五位数高位端口（49152–65535），避开常见服务端口，也不撞系统动态端口分配区。
 const DefaultListen = "127.0.0.1:51837"
@@ -41,8 +55,7 @@ func (i Instance) IsEnabled() bool { return i.Enabled == nil || *i.Enabled }
 
 // Rule 是一条匹配规则：正则 + 优先级（数字越小越优先）。
 //
-// Match 会同时作用于字幕组名与最近的资源标题，因此既能排字幕组，
-// 也能排「简日内嵌 / 繁日内嵌 / 简繁日内封」这类字幕类型。
+// Match 默认同时作用于字幕组名与最近的资源标题；想只排其中一侧就写 In。
 type Rule struct {
 	Name     string `yaml:"name" json:"name"`
 	Match    string `yaml:"match" json:"match"`
@@ -51,6 +64,23 @@ type Rule struct {
 	Site string `yaml:"site,omitempty" json:"site,omitempty"`
 	// Scope 决定这条规则给主 RSS 排序还是给副 RSS 排序：main / standby / both。
 	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	// In 决定 Match 作用在哪个字符串上：any（默认）/ group / title。
+	//
+	// 排字幕组用 group：只看组名，不会被作品名里的同名字符串误伤。
+	// 排字幕类型用 title：只看资源标题。
+	In string `yaml:"in,omitempty" json:"in,omitempty"`
+}
+
+// InOr 返回规整后的匹配位置，缺省为 any（与分轴之前的行为一致）。
+func (r Rule) InOr() string {
+	switch strings.ToLower(strings.TrimSpace(r.In)) {
+	case InGroup:
+		return InGroup
+	case InTitle:
+		return InTitle
+	default:
+		return InAny
+	}
 }
 
 // ScopeOr 返回规整后的作用域，缺省为主 RSS。
@@ -525,10 +555,17 @@ func (c *Config) Normalize() {
 	}
 	for i := range c.Rules.Primary {
 		c.Rules.Primary[i].Scope = c.Rules.Primary[i].ScopeOr()
+		// in 只规整显式写了的取值：默认值留空，免得保存时给每条规则都补一个 in: any。
+		if strings.TrimSpace(c.Rules.Primary[i].In) != "" {
+			c.Rules.Primary[i].In = c.Rules.Primary[i].InOr()
+		}
 	}
-	// 外置文件里的规则同样要规整 scope，否则文件里写 main / standby 会失效。
+	// 外置文件里的规则同样要规整 scope / in，否则文件里写的取值会失效。
 	for i := range c.filePrimary {
 		c.filePrimary[i].Scope = c.filePrimary[i].ScopeOr()
+		if strings.TrimSpace(c.filePrimary[i].In) != "" {
+			c.filePrimary[i].In = c.filePrimary[i].InOr()
+		}
 	}
 	for i := range c.Instances {
 		c.Instances[i].BaseURL = NormalizeBaseURL(c.Instances[i].BaseURL)
@@ -640,6 +677,11 @@ func (c *Config) Validate() error {
 		case "", ScopeMain, ScopeStandby, ScopeBoth:
 		default:
 			return fmt.Errorf("规则 %q 的 scope 只能是 main / standby / both，实际 %q", r.Name, r.Scope)
+		}
+		switch strings.ToLower(strings.TrimSpace(r.In)) {
+		case "", InAny, InGroup, InTitle:
+		default:
+			return fmt.Errorf("规则 %q 的 in 只能是 any / group / title，实际 %q", r.Name, r.In)
 		}
 	}
 	for _, r := range c.AllDeny() {

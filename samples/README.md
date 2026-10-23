@@ -42,44 +42,43 @@ AniSync discover              # 现在有什么番剧在放（不碰实例，没
 AniSync plan --discover       # 哪些是实例里没有的、会新增什么
 ```
 
-## 组名怎么写（这一节最容易踩坑）
+## 组名怎么写
 
-同一个组有**三个名字**：
+**写 ANI-RSS 选组界面上显示的那个名字就行。**
 
-| 名字 | 出现在哪 | 例子 |
-| --- | --- | --- |
-| 显示名 | ANI-RSS 的选组界面、AnimeGarden 注册表 | `猎户发布组` |
-| 种子里的名字 | 资源标题的方括号里 | `[猎户压制部] 朱色假面 …` |
-| AniBT slug | AniBT 的 RSS 地址参数 | `…&groupSlug=toonshub` |
-
-AniSync 判断「这个候选是不是我要的组」时，把 **显示名 + 最近的资源标题**拼成一个字符串
-再做正则匹配（`internal/rules/rules.go` 的 `matchText`）。于是：
-
-- 走 `anibt` / `animegarden` / `mikan` 时，候选自带显示名，**只写显示名就能命中**
-- 走 `nyaa` 时只有标题，候选的显示名是从 `[方括号]` 里抠出来的 ——
-  **只写显示名会静默匹配不到**
-
-所以 `subs.yaml` / `raws.yaml` 里每条 `match` 都写了两种，**行尾注释是该组的真实标题**，
-照着核对或照抄即可：
+AniSync 拿到的候选本来就带这个名字（`anibt` / `animegarden` / `mikan` 走实例接口，
+实例给什么名字就是什么名字）。同时它还会把资源标题方括号里印出来的名字一并当成
+这个组的别名 —— 所以显示名和种子名对不上时，**写哪一个都能命中**：
 
 ```yaml
-- {name: 猎户发布组, match: '(?i)猎户发布组|猎户压制部|猎户不鸽', priority: 70, scope: main}
-#      ↑ 选组界面上的名字        ↑ 种子里实际印的名字（[猎户压制部] 朱色假面 …）
+# 下面两条命中同一个组，写一条就够了
+- {name: 猎户发布组, match: '(?i)猎户发布组', priority: 70, scope: main, in: group}
+- {name: 猎户发布组, match: '(?i)猎户压制部', priority: 70, scope: main, in: group}
 ```
 
-想知道某个组在种子里叫什么，最可靠的查法是在 ANI-RSS 里选中它，看它列出的资源标题 ——
-AniSync 拿到的就是同一批标题。
+别名是跟着候选从标题里现算的，不用人去维护，也不用逐条核对。
 
-### 短名字要锚定位置
+> 为什么能这样：`in: group` 让这条规则只看组名。组名这一侧 = 候选的显示名
+> + 标题方括号里的名字（`internal/source/source.go` 的 `GroupAliasesFromTitles`，
+> 与 ANI-RSS 的 `ItemsUtil.getSubgroup()` 同源）。
+> 想看某个候选到底有哪些名字，跑 `AniSync probe -site anibt -bgm <bgmId>`。
 
-`ANi`、`Judas`、`ASW`、`DKB` 这种短名字，直接写 `\bani\b` 会在作品名里误伤 ——
-标题是「Ani ni Tsukeru Kusuri wa Nai」时，`\bani\b` 命中作品名里的 `Ani`，
-这条规则就把一部根本不是 ANi 发的番认成 ANi。所以样例里写成两种位置：
+### 简繁两种字形要各写一个
+
+`绿茶字幕组` 和 `綠茶字幕組` 是同一个名字的两种字形，别名机制对不上（字不一样），
+所以规则里得写全：`match: '(?i)绿茶字幕组|綠茶字幕組'`。
+
+### 短名字锚在开头
+
+`ANi`、`Judas`、`ASW`、`DKB` 这种名字很短，写 `(?i)ani` 有可能蹭到别的组名。锚在开头就不会：
 
 ```yaml
-- {name: ANi, match: '(?i)^ani\b|\[ani\]', priority: 310, scope: both}
-#              ↑ 候选显示名就是它      ↑ 种子标题里的组名
+- {name: ANi, match: '(?i)^ani\b', priority: 310, scope: both, in: group}
 ```
+
+以前这里得写成 `^ani\b|\[ani\]`，还要在注释里解释「为什么不能写 `\bani\b`」——
+那是因为规则当时连资源标题一起匹配，作品名「Ani ni Tsukeru Kusuri wa Nai」里的 `Ani`
+会把别的组认成 ANi。`in: group` 之后标题根本不参与匹配，这个坑就不存在了。
 
 ## 最常改的地方
 
@@ -93,10 +92,13 @@ AniSync 拿到的就是同一批标题。
 
 ```yaml
   primary:
-    - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|\bchs\b', priority: 1, scope: main}
-    - {name: 简繁日内封, match: '(?i)简繁|簡繁|内封|內封',         priority: 2, scope: main}
-    - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|\bcht\b',      priority: 3, scope: main}
+    - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|\bchs\b', priority: 1, scope: main, in: title}
+    - {name: 简繁日内封, match: '(?i)简繁|簡繁|内封|內封',         priority: 2, scope: main, in: title}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|\bcht\b',      priority: 3, scope: main, in: title}
 ```
+
+`in: title` 表示只看资源标题。不写的话默认是 `in: any`（组名也一起匹配），
+排版本时没必要把组名也拉进来。
 
 顺序有讲究：`简繁日内封` 的标题里同时含「繁日」，所以 `简繁` 必须排在 `繁日` **前面**，
 否则会被 `繁日` 规则先吃掉。
@@ -105,9 +107,13 @@ AniSync 拿到的就是同一批标题。
 它会把该组标题里出现过的标签组合（`简 日 内嵌` / `繁 日 内嵌` / `简 繁 日 内封` …）列出来，
 照着你的口味排就行。
 
-**3. 作用域 —— `scope`**
-`main` = 只参与挑主 RSS，`standby` = 只参与挑副 RSS，`both` = 两边都参与。
-`subs.yaml` 用 `main`、`raws.yaml` 用 `both`，靠 priority 把主 RSS 让给字幕组。
+**3. 作用域 —— `scope` 与 `in`**
+`scope` 决定规则参与挑哪一侧：`main` = 只参与挑主 RSS，`standby` = 只参与挑副 RSS，
+`both` = 两边都参与。`subs.yaml` 用 `main`、`raws.yaml` 用 `both`，靠 priority 把主 RSS 让给字幕组。
+
+`in` 决定规则匹配什么：`group` = 只看组名（排组用这个），`title` = 只看资源标题（排版本用这个），
+`any` = 两者一起看。**不写 `in` 就是 `any`** —— 那是分轴之前的老行为，
+所以已有的配置不会因为升级而改变挑选结果；新写的规则建议都显式写清楚。
 
 **副 RSS 是「点名制」**：只有被 `scope: standby` 或 `scope: both` 规则点过名的组才会进副 RSS。
 不点名就按发布条数兜底的话，会被搬运组和实例侧的伪组名刷满 ——
@@ -142,7 +148,7 @@ targets:
 ## 让 AI 帮你改
 
 样例写成了「一段一段带注释」的样子，就是为了能整段丢给 AI 改。
-**把 `subs.yaml` / `raws.yaml` 一起给它** —— 组名的准确写法都在那些行尾注释里。
+**把 `subs.yaml` / `raws.yaml` 一起给它**，它就能照着你现有的口味改。
 可以直接这样问：
 
 > 这是 AniSync 的组名单。我只看简体中文内嵌，不要繁体；字幕组只要桜都、
@@ -151,8 +157,8 @@ targets:
 
 几个要点：
 
-- **规则里的组名必须是真出现过的**。让 AI 只在你给它的名单里挑，别自己编 ——
-  编出来的名字不报错，只是永远匹配不到。要加新组，先在 ANI-RSS 里确认它标题怎么写
+- **加新组时让它只在你给它的名单里挑**，别自己编 —— 编出来的名字不报错，只是永远匹配不到。
+  要加新组，先在 ANI-RSS 的选组界面上确认它叫什么，把那个名字给它
 - 让它**只改规则文件**，`instances` / `listen` / `sync` 这些别动，避免把密钥格式改坏
 - 改完自己跑一遍 `AniSync check`：正则写错了这一步就会报出来
 
@@ -193,10 +199,12 @@ targets:
 
 ## 常见坑
 
-**只写显示名。** 见上面「组名怎么写」。有的组两个名字对不上（`猎户发布组` 的种子名是
-`猎户压制部`），只写显示名在 nyaa 上一条也匹配不到，而且**不会报错**，只是永远选不到那个组。
+**组名写错。** 写 ANI-RSS 选组界面上显示的名字就行，种子标题里的名字（`猎户压制部`）
+也能命中。但自己编的名字**不会报错**，只是永远选不到那个组 ——
+拿不准就跑 `AniSync probe -site anibt -bgm <bgmId>`，看这个番剧的候选都有哪些名字。
 
-**短名字不锚定。** `\bani\b` 会命中作品名里的 `Ani`。用 `^ani\b|\[ani\]`。
+**短名字不锚定。** `(?i)ani` 有可能蹭到别的组名，写成 `(?i)^ani\b`。
+（以前得写 `^ani\b|\[ani\]`，因为规则连资源标题一起匹配；`in: group` 之后不用了。）
 
 **`deny` 写太宽。** 比如 `BDRip` —— 周更观看不想要它，收藏党恰恰要它。
 还有 `skymoon` 这种：它同时是一个大组的种子名。

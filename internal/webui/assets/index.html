@@ -286,7 +286,7 @@ svg.i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-widt
 @keyframes row-out{to{opacity:0;transform:translateY(-4px)}}
 
 .inst{grid-template-columns:minmax(120px,1fr) minmax(180px,1.5fr) minmax(160px,1.4fr) auto auto}
-.rule{grid-template-columns:minmax(110px,.8fr) minmax(190px,1.6fr) 72px 96px 104px auto}
+.rule{grid-template-columns:minmax(110px,.8fr) minmax(190px,1.6fr) 72px 88px 96px 104px auto}
 .target{grid-template-columns:minmax(140px,1.4fr) 108px 64px 84px 84px 108px 52px auto}
 .deny{grid-template-columns:1fr 150px auto}
 
@@ -694,7 +694,7 @@ td.act{white-space:nowrap}
       <section class="panel" id="p-rules" aria-labelledby="h-rules">
         <div class="panel-head"><h2 id="h-rules">规则</h2></div>
         <p class="lede">正则 + 优先级，数字越小越优先。作用域选<b>副 RSS</b> 的是点名制：没被点名的组不进副 RSS。</p>
-        <div class="row row-head rule"><span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>限定站点</span><span></span></div>
+        <div class="row row-head rule"><span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>匹配对象</span><span>限定站点</span><span></span></div>
         <div class="list" id="rules"></div>
         <div class="panel-foot">
           <button class="btn" onclick="addRule()" aria-label="添加规则"><svg class="i"><use href="#i-plus"/></svg>添加规则</button>
@@ -1168,6 +1168,11 @@ function render() {
         <option value="standby" ${rule.scope === 'standby' ? 'selected' : ''}>副 RSS</option>
         <option value="both" ${rule.scope === 'both' ? 'selected' : ''}>两者</option>
       </select>
+      <select class="input" aria-label="规则匹配对象" onchange="cfg.rules.primary[${i}].in=this.value">
+        <option value="any" ${!rule.in || rule.in === 'any' ? 'selected' : ''}>组名+标题</option>
+        <option value="group" ${rule.in === 'group' ? 'selected' : ''}>组名</option>
+        <option value="title" ${rule.in === 'title' ? 'selected' : ''}>标题</option>
+      </select>
       <select class="input" aria-label="规则限定站点" onchange="cfg.rules.primary[${i}].site=this.value">
         <option value="">不限站点</option>
         ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
@@ -1232,14 +1237,14 @@ function addInstance() {
 }
 function delInstance(i) { markDirty('p-instances'); removeRow('instances', i, () => cfg.instances.splice(i, 1)); }
 function addRule() {
-  cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', site: '' });
+  cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', in: 'any', site: '' });
   render(); revealRow('rules', cfg.rules.primary.length - 1); markDirty('p-rules');
 }
 function addTypeRules() {
   cfg.rules.primary.push(
-    { name: '简日内嵌', match: '(?i)简日|简体|CHS', priority: 10, scope: 'main', site: '' },
-    { name: '繁日内嵌', match: '(?i)繁日|繁體|CHT', priority: 20, scope: 'main', site: '' },
-    { name: '简繁日内封', match: '(?i)简繁|内封', priority: 30, scope: 'main', site: '' });
+    { name: '简日内嵌', match: '(?i)简日|简体|CHS', priority: 10, scope: 'main', in: 'title', site: '' },
+    { name: '繁日内嵌', match: '(?i)繁日|繁體|CHT', priority: 20, scope: 'main', in: 'title', site: '' },
+    { name: '简繁日内封', match: '(?i)简繁|内封', priority: 30, scope: 'main', in: 'title', site: '' });
   render(); markDirty('p-rules');
 }
 function delRule(i) { markDirty('p-rules'); removeRow('rules', i, () => cfg.rules.primary.splice(i, 1)); }

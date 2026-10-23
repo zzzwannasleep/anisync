@@ -40,16 +40,18 @@ rules:
   maxStandby: 1
 
   # 正则 + 优先级，数字越小越优先；按声明顺序匹配，第一条命中的生效。
-  # 匹配对象 = 字幕组名 + 最近的资源标题，所以字幕类型也能排优先级。
   # scope: main = 只参与挑主 RSS（默认）；standby = 只参与挑副 RSS；both = 两边都参与。
+  # in:    group = 只看组名；title = 只看资源标题；any = 两者一起看（默认）。
+  #        排字幕组用 group —— 组名这一侧同时含「选组界面上的显示名」与
+  #        「种子标题方括号里的名字」，所以两个名字写哪个都能命中，不用都写。
   primary:
     # 字幕类型优先级。注意简繁要排在繁日前面，否则「简繁日」会先被繁日规则吃掉。
-    - {name: 简日内嵌,   match: '(?i)简日|简体|CHS',        priority: 10, scope: main}
-    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 20, scope: main}
-    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 30, scope: main}
-    # 字幕组优先级
-    - {name: 桜都字幕组, match: '(?i)sakurato|桜都',        priority: 40, scope: main}
-    - {name: LoliHouse,  match: '(?i)lolihouse|萝莉屋',     priority: 50, scope: main}
+    - {name: 简日内嵌,   match: '(?i)简日|简体|CHS',        priority: 10, scope: main, in: title}
+    - {name: 简繁日内封, match: '(?i)简繁|内封',            priority: 20, scope: main, in: title}
+    - {name: 繁日内嵌,   match: '(?i)繁日|繁體|CHT',        priority: 30, scope: main, in: title}
+    # 字幕组优先级：写选组界面上显示的名字即可
+    - {name: 桜都字幕组, match: '(?i)sakurato|桜都',        priority: 40, scope: main, in: group}
+    - {name: LoliHouse,  match: '(?i)lolihouse|萝莉屋',     priority: 50, scope: main, in: group}
     # 副 RSS 的放流组排名不写在这里，放到白名单文件（见下面的 primaryFiles）。
 
   # 白名单与黑名单各放一个文件，不写死在主配置里 —— 换口味只换文件，主配置不用动。

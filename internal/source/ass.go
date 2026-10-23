@@ -176,14 +176,15 @@ func toCandidates(site string, groups []assapi.Group) []Candidate {
 			weight = len(group.Items)
 		}
 		out = append(out, Candidate{
-			Site:     site,
-			Label:    name,
-			Subgroup: name,
-			URL:      rss,
-			Type:     SiteType(site),
-			BgmURL:   strings.TrimSpace(group.BgmURL),
-			Titles:   titles,
-			Weight:   weight,
+			Site:         site,
+			Label:        name,
+			Subgroup:     name,
+			URL:          rss,
+			Type:         SiteType(site),
+			BgmURL:       strings.TrimSpace(group.BgmURL),
+			Titles:       titles,
+			GroupAliases: GroupAliasesFromTitles(titles),
+			Weight:       weight,
 		})
 	}
 	return dedupe(out)

@@ -89,7 +89,9 @@ Nyaa 资源最广，补 AniBT 的盲区。`animegarden` / `mikan` 走的是和 A
 
 **Nyaa 例外。** ANI-RSS 本身不集成 Nyaa，Nyaa 也没有字幕组维度。AniSync 按关键字搜一次 RSS，从标题里提取 `[放流组]` 聚合，为每个组生成一个限定搜索词的 RSS（`?page=rss&q=…&c=0_0&f=0`，与站点搜索页的 RSS 按钮一致）。这种搜索型 RSS 的 `type` 为 `other`，ANI-RSS 可以直接消费。
 
-**规则匹配标题。** 字幕类型（简日 / 繁日 / 内嵌 / 内封）只写在资源标题里，所以规则的匹配对象是「字幕组名 + 最近的资源标题」。`scope` 把规则分给主 RSS、副 RSS 或两者，因此「主 RSS 是字幕组、副 RSS 是放流组」只是一组 `scope: standby` 规则。
+**规则分两个轴。** ANI-RSS 那边组名是一个**身份**（订阅的 `subgroup` / `standbyRssList[].label`，存的就是选组界面上的显示名），字幕类型才是标题里的**文字**。AniSync 照抄这个划分：`in: group` 只看组名，`in: title` 只看资源标题，`in: any`（默认）两者拼在一起看。分轴解决了两件事 —— 一是短组名不会再被作品名误伤（`Ani ni Tsukeru Kusuri wa Nai` 里的 `Ani` 不会把别的组认成 ANi，于是 `^ani\b|\[ani\]` 这种位置锚定可以退回 `^ani\b`）；二是组名那一侧同时含显示名与**种子标题方括号里的名字**（`GroupAliasesFromTitles`，与 ANI-RSS 的 `ItemsUtil.getSubgroup()` 同源），所以 `猎户发布组` 与 `猎户压制部` 写哪个都能命中，用户不必维护对照表。`in: any` 保持分轴之前的语义，已有配置的挑选结果不变。
+
+**`scope` 决定规则参与哪一侧。** `main` 只挑主 RSS、`standby` 只挑副 RSS、`both` 两边都参与，因此「主 RSS 是字幕组、副 RSS 是放流组」只是一组 `scope: standby` 规则。
 
 **缓存只存需要的部分。** 缓存键为 `站点:番剧标识`，只保留每个字幕组最近 12 条标题样本，热度单独用 `Total` 字段承载。缓存写入是「临时文件 + rename」的原子替换，读不出来就退化成无缓存，不影响同步结果。
 

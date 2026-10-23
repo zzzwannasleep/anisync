@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zzzwannasleep/anisync/internal/assapi"
@@ -61,6 +62,11 @@ func cmdProbe(args []string) int {
 		for _, candidate := range result.Candidates {
 			fmt.Printf("  - %-24s 热度=%-4d 标题样本=%-3d %s\n",
 				candidate.Label, candidate.Weight, len(candidate.Titles), candidate.URL)
+			// 组名这一侧的全部可匹配名字：显示名 + 标题方括号里抠出来的别名。
+			// 规则里写 in: group 时，写这里面任何一个都能命中这个候选。
+			if len(candidate.GroupAliases) > 0 {
+				fmt.Printf("      组名可写: %s\n", strings.Join(candidate.GroupAliases, " / "))
+			}
 		}
 	}
 	return 0

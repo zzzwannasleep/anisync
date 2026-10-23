@@ -135,4 +135,61 @@ func TestTrimGroupsKeepsWeight(t *testing.T) {
 	}
 }
 
+// 组名别名：只取标题**开头**方括号里的名字。
+//
+// 目的不是「猜这个组叫什么」，而是「规则里写哪一个名字都能命中」，
+// 于是显示名（猎户发布组）和种子名（猎户压制部）不用都写。
+// 只取开头那一个，是因为后面的方括号是集数 / 分辨率 / 字幕类型，不是组名。
+func TestGroupAliasesFromTitles(t *testing.T) {
+	got := GroupAliasesFromTitles([]string{
+		"[猎户压制部] 朱色假面 [02][1080P][简繁日内封]",
+		"【喵萌奶茶屋】★10月新番★[被放逐的作弊赋予魔法师][01][1080P]",
+		"[猎户压制部] 朱色假面 [01][1080P][简繁日内封]",
+		"没有方括号的标题 01",
+	})
+	want := []string{"猎户压制部", "喵萌奶茶屋"}
+	if len(got) != len(want) {
+		t.Fatalf("别名应只有标题开头的方括号，期望 %v，实际 %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("别名不匹配，期望 %v，实际 %v", want, got)
+		}
+	}
+}
+
+// 没有方括号的标题不该凭空造出别名 —— 作品名里的 Ani 不是组名。
+func TestGroupAliasesIgnoresBracketlessTitles(t *testing.T) {
+	if got := GroupAliasesFromTitles([]string{"Ani ni Tsukeru Kusuri wa Nai 01"}); len(got) != 0 {
+		t.Fatalf("没有方括号就没有别名，实际 %v", got)
+	}
+	if got := GroupAliasesFromTitles(nil); got != nil {
+		t.Fatalf("没有标题时不应有别名，实际 %v", got)
+	}
+}
+
+// 候选要带上别名，规则才能用一个名字同时命中显示名和种子名两种情况。
+func TestToCandidatesCarriesGroupAliases(t *testing.T) {
+	out := toCandidates("animegarden", []assapi.Group{{
+		Name:  "猎户发布组",
+		RSS:   "https://api.animes.garden/feed.xml?subject=517106&fansub=猎户发布组",
+		Items: []assapi.GroupItem{{Title: "[猎户压制部] 朱色假面 [02][1080P][简繁日内封]"}},
+	}})
+	if len(out) != 1 {
+		t.Fatalf("应有 1 个候选，实际 %d", len(out))
+	}
+	if out[0].Label != "猎户发布组" {
+		t.Fatalf("Label 应是显示名，实际 %q", out[0].Label)
+	}
+	found := false
+	for _, alias := range out[0].GroupAliases {
+		if alias == "猎户压制部" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("别名里应有种子名 猎户压制部，实际 %v", out[0].GroupAliases)
+	}
+}
+
 func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }

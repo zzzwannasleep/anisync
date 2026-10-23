@@ -1,7 +1,8 @@
 # AniSync 放流组排名（生肉 / 原声，不做字幕或只做硬字幕）
 #
 # scope: both —— 主副 RSS 都参与，这是「只追放流」那一份的主名单，
-# 也是「字幕组加放流」那一份的副名单。
+#               也是「字幕组加放流」那一份的副名单。
+# in: group   —— 只看组名，不看资源标题。
 #
 # 为什么 priority 从 300 起：和 subs.yaml 一起用时（03 号样例），
 # 字幕组的规则是 10~210，这里必须排在后面，主 RSS 才会优先给字幕组；
@@ -10,25 +11,25 @@
 #
 # 顺序就是偏好，数字越小越优先。想捧谁调小，想踩谁调大或写进 deny.yaml。
 #
-# 每条 match 都同时写「选组界面上的显示名」和「种子标题里的组名」：
-# 走 anibt 时候选自带显示名，走 nyaa 时只有标题，少写一个就会在某一侧静默失效。
-# 行尾注释是该组的真实标题开头，用来核对名字。
+# 组名怎么写见 subs.yaml 开头：写 ANI-RSS 选组界面上显示的名字就行。
+# Erai-raws / SubsPlease / Judas / ASW / AnoZu / DKB 这几家只在 Nyaa 上有
+# （AnimeGarden 注册表里没有），它们的组名就是标题方括号里的那个名字，照写即可。
+
+- {name: ToonsHub,    match: '(?i)toonshub',        priority: 300, scope: both, in: group}
+- {name: ANi,         match: '(?i)^ani\b',          priority: 310, scope: both, in: group}
+- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws', priority: 320, scope: both, in: group}
+- {name: Erai-raws,   match: '(?i)erai-raws',       priority: 330, scope: both, in: group}
+- {name: SubsPlease,  match: '(?i)subsplease',      priority: 340, scope: both, in: group}
+- {name: Lilith-Raws, match: '(?i)lilith-raws',     priority: 350, scope: both, in: group}
+- {name: Judas,       match: '(?i)^judas\b',        priority: 360, scope: both, in: group}
+- {name: ASW,         match: '(?i)^asw\b',          priority: 370, scope: both, in: group}
+- {name: AnoZu,       match: '(?i)anozu',           priority: 380, scope: both, in: group}
+- {name: DKB,         match: '(?i)^dkb\b',          priority: 390, scope: both, in: group}
+
+# ANi / Judas / ASW / DKB 这几个名字很短，所以锚在组名开头（^ani\b）：
+# 名字叫 AnimeGarden 的组不会被 ^ani\b 命中（ani 后面是 m，不是词边界）。
 #
-# Erai-raws / SubsPlease / Judas / ASW / AnoZu / DKB 不在 AnimeGarden 注册表里，
-# 只在 Nyaa 上有，所以它们本来就只有一个名字。
-
-- {name: ToonsHub,    match: '(?i)toonshub',           priority: 300, scope: both}  # [ToonsHub] 冰之城墙 第二季 …
-- {name: ANi,         match: '(?i)^ani\b|\[ani\]',     priority: 310, scope: both}  # [ANi] 鐵旅！meet with 鐵道少女 …
-- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws',   priority: 320, scope: both}  # [Nix-Raws] 被追放的转生重骑士 …
-- {name: Erai-raws,   match: '(?i)erai-raws',          priority: 330, scope: both}
-- {name: SubsPlease,  match: '(?i)subsplease',         priority: 340, scope: both}
-- {name: Lilith-Raws, match: '(?i)lilith-raws',        priority: 350, scope: both}  # [Lilith-Raws] 從 Lv2 開始開外掛 …
-- {name: Judas,       match: '(?i)^judas\b|\[judas\]', priority: 360, scope: both}
-- {name: ASW,         match: '(?i)^asw\b|\[asw\]',     priority: 370, scope: both}
-- {name: AnoZu,       match: '(?i)anozu',              priority: 380, scope: both}
-- {name: DKB,         match: '(?i)^dkb\b|\[dkb\]',     priority: 390, scope: both}
-
-# ANi / Judas / ASW / DKB 这几个名字很短，`\bani\b` 这种写法会在作品名里误伤 ——
-# 比如标题是「Ani ni Tsukeru Kusuri wa Nai」时，`\bani\b` 会命中作品名里的 Ani，
-# 于是这条规则把一部根本不是 ANi 发的番认成 ANi。所以改成只认两种位置：
-# 开头的（候选显示名就是它）和方括号里的（种子标题里的组名）。
+# 以前这里写的是 ^ani\b|\[ani\]，还要在注释里解释「为什么不能写 \bani\b」——
+# 那是因为规则当时连资源标题一起匹配，作品名「Ani ni Tsukeru Kusuri wa Nai」
+# 里的 Ani 会把别的组认成 ANi。现在 in: group 只看组名，标题根本不参与，
+# 这个坑就不存在了。

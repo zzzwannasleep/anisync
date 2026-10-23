@@ -48,6 +48,17 @@ type Candidate struct {
 	// 规则引擎靠它来排「简日内嵌 > 繁日内嵌 > 简繁日内封」这类优先级。
 	Titles []string `json:"-"`
 
+	// GroupAliases 是这个组在种子标题里印出来的名字：标题**开头**方括号的内容。
+	//
+	// 同一个组在 ANI-RSS 的选组界面上叫显示名，在种子标题里可能印成另一个名字
+	// （猎户发布组 / [猎户压制部]、天月動漫發佈組 / [Skymoon-Raws]）。
+	// 与其让用户把两个名字都写进规则，不如把标题里印出来的名字登记成这个组的别名 ——
+	// 规则里写哪一个都能命中，而且这份别名跟着候选一起算出来，不用人去维护。
+	//
+	// 提取规则与 ANI-RSS 的 ItemsUtil.getSubgroup() 同源（^\s*\[(.+?)]，也认全角括号），
+	// 只取开头那一个：后面的方括号是集数、分辨率、字幕类型，不是组名。
+	GroupAliases []string `json:"groupAliases,omitempty"`
+
 	// 以下字段由规则引擎填充
 	Priority        int    `json:"priority"`
 	StandbyPriority int    `json:"standbyPriority"`
@@ -184,6 +195,47 @@ func CleanKeyword(title string) string {
 	title = strings.NewReplacer("【", " ", "】", " ", "[", " ", "]", " ").Replace(title)
 	title = keywordSpaces.ReplaceAllString(title, " ")
 	return strings.TrimSpace(title)
+}
+
+// maxGroupAliases 是每个候选最多登记多少个组名别名。
+const maxGroupAliases = 16
+
+// groupBracket 抠出标题**开头**方括号（含全角）的内容。
+//
+// 锚定在开头是照抄 ANI-RSS 的 ItemsUtil.getSubgroup()（^\s*\[(.+?)]）：
+// 组名几乎总是资源标题的第一个方括号，后面的方括号是集数、分辨率、字幕类型。
+// 只取开头这一个，别名表就不会被 [01] [1080P] 这类东西灌满。
+var groupBracket = regexp.MustCompile(`^\s*[\[【]([^\]】]{1,60})[\]】]`)
+
+// GroupAliasesFromTitles 收集资源标题开头方括号里的组名。
+//
+// 这不是在猜「这个组叫什么」，而是「把标题里印出来的组名登记成别名」：
+// 于是规则里写显示名或写种子名都能命中，不用两个都写，也不用去核对。
+//
+// 别名只挂在候选的「组名」这一侧（规则里写 in: group），不会混进标题匹配，
+// 所以 `Ani ni Tsukeru Kusuri wa Nai` 这种作品名里的 Ani 不会被当成组名。
+func GroupAliasesFromTitles(titles []string) []string {
+	if len(titles) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(titles))
+	out := make([]string, 0, len(titles))
+	for _, title := range titles {
+		m := groupBracket.FindStringSubmatch(title)
+		if m == nil {
+			continue
+		}
+		name := clean(m[1])
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+		if len(out) >= maxGroupAliases {
+			break
+		}
+	}
+	return out
 }
 
 // dedupe 按 URL 去重，保留先出现的（即优先级更高的站点）。

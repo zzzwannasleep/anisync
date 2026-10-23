@@ -16,7 +16,7 @@
 #   2. 改下面 instances 里的 baseUrl 和 apiKey
 #   3. AniSync check / plan / sync -y
 #
-# 怎么改：subs.yaml 里的顺序就是偏好。组名怎么写见 README 的「组名怎么写」。
+# 怎么改：subs.yaml 里的顺序就是偏好。组名怎么写见 subs.yaml 开头。
 
 listen: 127.0.0.1:51837
 # proxy: http://127.0.0.1:7890

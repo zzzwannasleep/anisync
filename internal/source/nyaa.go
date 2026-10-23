@@ -89,13 +89,14 @@ func (n *Nyaa) Groups(ctx context.Context, q Query) ([]Candidate, error) {
 	candidates := make([]Candidate, 0, len(groups))
 	for _, name := range groups {
 		candidates = append(candidates, Candidate{
-			Site:     "nyaa",
-			Label:    name,
-			Subgroup: name,
-			Type:     "other",
-			URL:      n.searchURL(keyword, name),
-			Titles:   latest[name],
-			Weight:   counts[name],
+			Site:         "nyaa",
+			Label:        name,
+			Subgroup:     name,
+			Type:         "other",
+			URL:          n.searchURL(keyword, name),
+			Titles:       latest[name],
+			GroupAliases: GroupAliasesFromTitles(latest[name]),
+			Weight:       counts[name],
 		})
 	}
 	return dedupe(candidates), nil

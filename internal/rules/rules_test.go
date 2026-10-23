@@ -233,3 +233,90 @@ func TestScopeBothParticipatesInBoth(t *testing.T) {
 		t.Fatal("scope=both 应参与副 RSS 排序")
 	}
 }
+
+// in: group 只看组名，短组名不会再被作品名误伤。
+//
+// 两轴拼在一起匹配时，「Ani ni Tsukeru Kusuri wa Nai」里的 Ani 会把别的组认成 ANi，
+// 只能靠 ^ani\b|\[ani\] 这种位置锚定去绕。分轴之后 ^ani$ 就够。
+func TestInGroupIsNotFooledByTitleBody(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "ANi", Match: `(?i)^ani$`, Priority: 10, In: InGroup},
+	}, nil, 3)
+
+	other := source.Candidate{
+		Site:   "anibt",
+		Label:  "某个字幕组",
+		Titles: []string{"[某个字幕组] Ani ni Tsukeru Kusuri wa Nai [01][1080P]"},
+	}
+	if name, _, ok := engine.Match(other); ok {
+		t.Fatalf("作品名里的 Ani 不该被当成组名，实际命中 %q", name)
+	}
+
+	ani := source.Candidate{Site: "anibt", Label: "ANi", Titles: []string{"[ANi] 鐵旅！ [03][1080P]"}}
+	if name, _, ok := engine.Match(ani); !ok || name != "ANi" {
+		t.Fatalf("显示名为 ANi 的候选应命中，实际 ok=%v name=%q", ok, name)
+	}
+}
+
+// in: group 时，显示名和种子名写哪个都能命中 —— 别名是跟着候选从标题里抠出来的。
+func TestInGroupOneNameIsEnough(t *testing.T) {
+	candidate := source.Candidate{
+		Site:         "animegarden",
+		Label:        "猎户发布组",           // 选组界面上的显示名
+		GroupAliases: []string{"猎户压制部"}, // 种子标题里印出来的名字
+		Titles:       []string{"[猎户压制部] 朱色假面 [02][1080P][简繁日内封]"},
+	}
+	for _, match := range []string{`猎户发布组`, `猎户压制部`, `猎户`} {
+		engine := mustEngine(t, []Rule{{Name: "猎户", Match: match, Priority: 10, In: InGroup}}, nil, 3)
+		if name, _, ok := engine.Match(candidate); !ok || name != "猎户" {
+			t.Fatalf("in: group 时 match=%q 应命中，实际 ok=%v name=%q", match, ok, name)
+		}
+	}
+}
+
+// in: title 只看资源标题，组名撞上版本词也不会误判。
+func TestInTitleIgnoresGroupName(t *testing.T) {
+	engine := mustEngine(t, []Rule{
+		{Name: "简日", Match: `简日`, Priority: 10, In: InTitle},
+	}, nil, 3)
+
+	// 组名里带「简日」两个字，但标题里没有 -> 不该命中
+	groupOnly := source.Candidate{
+		Site:   "anibt",
+		Label:  "简日字幕组",
+		Titles: []string{"[某组] 某番 [01][1080P]"},
+	}
+	if name, _, ok := engine.Match(groupOnly); ok {
+		t.Fatalf("in: title 不该看组名，实际命中 %q", name)
+	}
+
+	withTitle := source.Candidate{
+		Site:   "anibt",
+		Label:  "某组",
+		Titles: []string{"[某组] 某番 [01][1080P][简日内嵌]"},
+	}
+	if name, _, ok := engine.Match(withTitle); !ok || name != "简日" {
+		t.Fatalf("标题里写了简日应命中，实际 ok=%v name=%q", ok, name)
+	}
+}
+
+// 不写 in 时行为与分轴之前逐字一致：老配置的挑选结果不会悄悄变。
+func TestInAnyKeepsLegacyBehaviour(t *testing.T) {
+	engine := mustEngine(t, []Rule{{Name: "旧规则", Match: `(?i)ani`, Priority: 10}}, nil, 3)
+
+	// 作品名里的 Ani 仍然会命中 —— 这正是分轴要解决的问题，但默认值必须保持不变。
+	inTitle := source.Candidate{
+		Site:   "anibt",
+		Label:  "某组",
+		Titles: []string{"[某组] Ani ni Tsukeru Kusuri wa Nai [01]"},
+	}
+	if _, _, ok := engine.Match(inTitle); !ok {
+		t.Fatal("默认 in: any 必须保持旧行为")
+	}
+
+	// 别名只进 in: group 那一侧；算进 any 会悄悄改变已有配置的挑选结果。
+	aliasOnly := source.Candidate{Site: "anibt", Label: "某组", GroupAliases: []string{"别名组"}}
+	if name, _, ok := engine.Match(aliasOnly); ok {
+		t.Fatalf("in: any 不应把别名算进来，实际命中 %q", name)
+	}
+}
