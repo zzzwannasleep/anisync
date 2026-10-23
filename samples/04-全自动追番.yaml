@@ -20,7 +20,7 @@ listen: 127.0.0.1:51837
 
 sources:
   instance: ""
-  order: [anibt, animegarden, mikan, nyaa]
+  order: [anibt, nyaa]
   stopOnFirstMatch: false
   timeoutSeconds: 25
   cacheMinutes: 720
@@ -85,18 +85,16 @@ sync:
 
 discover:
   enabled: true
-  # 发现来源，可多选：
-  #   animegarden          扫 AnimeGarden 的主题列表。只列出真的有字幕组在做的番剧，默认用它
-  #   bangumi-calendar     扫 Bangumi 每日放送表。当季新番全集，会把没人做的番剧也带出来
-  #   bangumi-collections  扫某个 Bangumi 用户的「在看」。要填下面的 bgmUser
-  sources: [animegarden]
-
-  # sources 里用了 bangumi-collections 才需要填（用户名或 uid，收藏要公开）。
-  # bgmUser: your_bgm_username
-
-  # 「首播日期在最近多少天内」算在放。180 天覆盖当季 + 上一季；
-  # 注意这里是首播日期不是更新时间，所以还没开播的新番也在范围内。
-  days: 180
+  # 发现来源：Yuc 的当季番剧表。
+  #
+  # 为什么不是 Bangumi 放送表：放送表把国漫、美漫、OVA、网络短片全混在一起，
+  # 而且不带地区与平台，要筛干净只能逐条查详情（一季 110 次请求）。
+  # Yuc（yuc.wiki）的季度页本身就是一份人工整理过的日本番剧表，拿它定
+  # 「这一季有什么」，再让 Bangumi 只负责补 bgmId —— 两边各干各擅长的事。
+  #
+  # 匹配走**日文原名**：中文译名是各家自己的写法，实测拿中文名对放送表命中率 46%，
+  # 日文原名 88%。剩下的靠检索兜底。
+  sources: [yuc]
 
   # 每个实例单次最多新增多少条。第一次跑别设太大，先看看扫出来的东西对不对。
   limit: 20
@@ -110,3 +108,11 @@ discover:
     - '(?i)国漫|国创'
     - '(?i)日剧|特摄'
     - '(?i)总集篇| recap'
+
+  # ---- 下面两项只有换成别的来源才有意义，放送表用不到 ----
+  #
+  # sources 里加了 animegarden 才需要 days：「首播日期在最近多少天内」算在放。
+  # days: 180
+  #
+  # sources 里加了 bangumi-collections 才需要 bgmUser（用户名或 uid，收藏要公开）。
+  # bgmUser: your_bgm_username

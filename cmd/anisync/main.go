@@ -200,13 +200,14 @@ func cmdDiscover(args []string) int {
 	defer func() { _ = store.Flush() }()
 
 	opts := discover.Options{
-		Sources: cfg.Discover.SourceList(),
-		BgmUser: cfg.Discover.BgmUser,
-		Days:    cfg.Discover.WindowDays(),
-		Proxy:   cfg.ResolvedProxy(),
-		Timeout: time.Duration(cfg.Sources.TimeoutSeconds) * time.Second,
-		Store:   store,
-		Exclude: cfg.Discover.Exclude,
+		Sources:   cfg.Discover.SourceList(),
+		BgmUser:   cfg.Discover.BgmUser,
+		Days:      cfg.Discover.WindowDays(),
+		JapanOnly: cfg.Discover.JapanOnlyEnabled(),
+		Proxy:     cfg.ResolvedProxy(),
+		Timeout:   time.Duration(cfg.Sources.TimeoutSeconds) * time.Second,
+		Store:     store,
+		Exclude:   cfg.Discover.Exclude,
 	}
 	if *sourceFlag != "" {
 		opts.Sources = strings.Split(*sourceFlag, ",")

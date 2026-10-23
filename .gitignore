@@ -11,3 +11,12 @@
 # 临时文件
 *.tmp
 .ci-log.txt
+
+# branding/build.py 跑过之后留下的 Python 缓存，不入库
+__pycache__/
+*.pyc
+
+# branding/png/ 是 build.py 从同目录 SVG 渲染出来的派生图（1024 再缩到各档），
+# 全部可重新生成，不入库。设计源（SVG / build.py / PROMPTS.md）和几份成品
+# 图标（ICO）是入库的 —— 没有源就没法换图标，没有成品就得装 Python + Pillow 才能构建。
+/branding/png/

@@ -194,13 +194,14 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	targets := cfg.Targets
 	if opts.Discover {
 		found, err := discover.Discover(ctx, discover.Options{
-			Sources: cfg.Discover.SourceList(),
-			BgmUser: cfg.Discover.BgmUser,
-			Days:    cfg.Discover.WindowDays(),
-			Proxy:   cfg.ResolvedProxy(),
-			Timeout: timeoutOf(cfg),
-			Store:   store,
-			Exclude: cfg.Discover.Exclude,
+			Sources:   cfg.Discover.SourceList(),
+			BgmUser:   cfg.Discover.BgmUser,
+			Days:      cfg.Discover.WindowDays(),
+			JapanOnly: cfg.Discover.JapanOnlyEnabled(),
+			Proxy:     cfg.ResolvedProxy(),
+			Timeout:   timeoutOf(cfg),
+			Store:     store,
+			Exclude:   cfg.Discover.Exclude,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("自动发现失败: %w", err)

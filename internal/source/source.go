@@ -1,9 +1,14 @@
 // Package source 是站点适配层：把「一个番剧」翻译成「各站点的字幕组/放流组 RSS 候选」。
 //
-// AniBT / AnimeGarden / Mikan 三家不自己爬网页，而是直接调用 ANI-RSS 实例的
-// aniBTGroup / animeGardenGroup / mikanGroup 接口——实例怎么认这个站点，我们就怎么认，
-// 拿到的是它自己拼好的 RSS 地址，不会因为站点改版而各写一份解析。
-// Nyaa 没有对应的 ASS 接口（ANI-RSS 本身也不集成 Nyaa），由本包按关键字搜索 RSS 自行适配。
+// 默认只跑两家，分工不重叠：
+//
+//	anibt  不自己爬网页，直接调用 ANI-RSS 实例的 aniBTGroup 接口——实例怎么认这个站点，
+//	       我们就怎么认，拿到的是它自己拼好的 RSS 地址，不会因为站点改版而各写一份解析。
+//	nyaa   实例不集成 Nyaa，由本包按关键字搜索 RSS 自行适配。
+//	       它是资源覆盖最广的一家，用来补 anibt 的盲区。
+//
+// animegarden / mikan 走的是和 anibt 同一类实例接口，仍保留可用（老配置照常生效），
+// 但不再进默认顺序：多出来的两家换不回额外的覆盖面。
 package source
 
 import (
@@ -16,6 +21,7 @@ import (
 
 	"github.com/zzzwannasleep/anisync/internal/assapi"
 	"github.com/zzzwannasleep/anisync/internal/cache"
+	"github.com/zzzwannasleep/anisync/internal/config"
 )
 
 // Query 描述要查找的番剧。
@@ -101,7 +107,7 @@ func NewRegistry(site *assapi.Client, httpClient *http.Client, timeout time.Dura
 		}
 	}
 	if len(r.order) == 0 {
-		r.order = []string{"anibt", "animegarden", "mikan", "nyaa"}
+		r.order = append([]string(nil), config.DefaultSourceOrder...)
 	}
 	return r
 }

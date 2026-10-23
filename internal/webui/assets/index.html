@@ -3,12 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0a0c0f">
+<script>
+/* 主题必须在首次绘制之前定好，否则跟随系统的深色用户会先闪一帧亮色。
+   所以这段内联在 head 里，不能挪到下面的脚本里等 DOM 就绪。
+   侧栏收起状态同理：晚一步设就会先撑开再收回，看着像抽了一下。 */
+(function () {
+  var root = document.documentElement;
+  var mode = 'auto';
+  try { mode = localStorage.getItem('anisync-theme') || 'auto'; } catch (e) { /* 隐私模式下读不到，按 auto 走 */ }
+  var dark = mode === 'dark' || (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  root.setAttribute('data-theme-mode', mode);
+
+  var rail = '0';
+  try { rail = localStorage.getItem('anisync-rail') === '1' ? '1' : '0'; } catch (e) { /* 同上 */ }
+  root.setAttribute('data-rail', rail);
+})();
+</script>
 <title>AniSync · 主副 RSS 打点</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230e1116'/%3E%3Cg fill='none' stroke='%2331c48d' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M20 12a8 8 0 0 1-13.7 5.5M4 12a8 8 0 0 1 13.7-5.5'/%3E%3Cpath d='M17.5 3.5v3h-3M6.5 20.5v-3h3'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" id="favicon">
 <style>
-/* ---------- 令牌：颜色 / 圆角 / 阴影 / 动效 / 字号 ---------- */
+/* ---------- 令牌 ----------
+   圆角只有一个：--r。面板、输入、按钮、标签、开关轨道、弹窗全部用它。
+   之前是 6/8/12/999 四种混着来，同一屏里又圆又方，所以这里刻意不留第二档。
+   唯一还是圆的地方是真正的圆（状态点、开关旋钮、转圈），以及 2px 的导航指示条 ——
+   给一条 2px 的线设圆角没有意义。 */
 :root{
   color-scheme:dark;
 
@@ -19,21 +40,50 @@
   --surface-3:#1b2129;
   --line:#222833;
   --line-2:#2d353f;
+  --line-hover:#3b4553;
 
   --text:#e9ecf1;
   --text-2:#9aa4b2;
   --text-3:#6d7684;
 
+  /* accent 有两种角色，必须拆开：
+     --accent 是「填充」（主按钮底、指示条、选中边框），--accent-bright 是「文字/图标」。
+     深色下两者都是亮绿；浅色下填充要亮、文字要暗，合成一个变量就会有一边看不清。 */
   --accent:#31c48d;
+  --accent-hover:#4ddca6;
   --accent-bright:#4ddca6;
   --accent-soft:rgba(49,196,141,.12);
   --accent-line:rgba(49,196,141,.38);
   --accent-ink:#04140d;
 
   --warn:#e0a458;
+  --warn-text:#e6b877;
+  --warn-line:rgba(224,164,88,.4);
   --err:#f2685f;
+  --danger-text:#ef938c;
+  --danger-line:#3a2b2b;
+  --danger-line-strong:rgba(242,104,95,.42);
+  --danger-soft:rgba(242,104,95,.1);
 
-  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-full:999px;
+  /* 下面这几个原先写死在规则里，提出来浅色模式才改得动 */
+  --topbar-bg:rgba(10,12,15,.82);
+  --input-focus-bg:#0d1116;
+  --thead-bg:#12161c;
+  --switch-knob:#8b95a3;
+  --sk-1:#171c22;
+  --sk-2:#20272f;
+  --scrim:rgba(3,6,9,.62);
+  --cover-bg:#171c22;
+
+  --r:8px;
+
+  /* 单行控件只有一个高度，不靠内容撑。
+     input / select / .btn 的原生内高天生不同：input 被 line-height:1.55 撑到 35.5，
+     select 的 line-height 计算出来是 normal，只有 33.3；只放一个 15px 图标的 .btn
+     根本没有文字行盒，只有 30.3。三种混在同一行就是参差不齐 —— 一行里最高的那个
+     决定行高，矮的那两个上下各留一条缝，看起来就是「凹进去」。
+     所以这里钉死高度，谁都不许再靠 padding + 内容自己长。 */
+  --ctl-h:36px;
 
   --sh-1:0 1px 2px rgba(0,0,0,.4);
   --sh-2:0 1px 2px rgba(0,0,0,.35), 0 10px 28px -18px rgba(0,0,0,.8);
@@ -42,72 +92,196 @@
   --motion-fast:120ms;
   --motion-base:200ms;
   --motion-medium:280ms;
-  --ease-out:cubic-bezier(.22,1,.36,1);
+  --ease:cubic-bezier(.22,1,.36,1);
 
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
 
+  --side-w:238px;
+  --side-w-rail:58px;
+
   --font:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Consolas,monospace;
+}
+
+/* ---------- 浅色模式 ----------
+   只覆盖颜色类变量：尺寸、圆角、动效、字体全部沿用上面的，两套主题共用一套骨架。
+   深色是 :root 默认值，所以「显式选深色」不需要单独一块，跟着默认走就行。 */
+:root[data-theme="light"]{
+  color-scheme:light;
+
+  --bg:#f6f7f9;
+  --side:#eef1f4;
+  --surface:#ffffff;
+  --surface-2:#f3f5f8;
+  --surface-3:#e7ebf0;
+  --line:#dfe4ea;
+  --line-2:#ccd3dc;
+  --line-hover:#a9b3c0;
+
+  --text:#111720;
+  --text-2:#4a5563;
+  --text-3:#78828f;
+
+  /* 填充仍用品牌翠绿，配深色字（8.5:1）；文字用深绿，白底上 5:1。
+     两者合成一个变量的话，不是按钮字看不清，就是激活态文字看不清。 */
+  --accent:#31c48d;
+  --accent-hover:#3ed79b;
+  --accent-bright:#0a7a53;
+  --accent-soft:rgba(15,140,98,.12);
+  --accent-line:rgba(15,124,86,.7);
+  --accent-ink:#04140d;
+
+  --warn:#c98419;
+  --warn-text:#8a5410;
+  --warn-line:rgba(201,132,25,.45);
+  --err:#c0392f;
+  --danger-text:#b3312a;
+  --danger-line:#eccac7;
+  --danger-line-strong:rgba(192,57,47,.42);
+  --danger-soft:rgba(192,57,47,.08);
+
+  --topbar-bg:rgba(255,255,255,.82);
+  --input-focus-bg:#ffffff;
+  --thead-bg:#f3f5f8;
+  --switch-knob:#9aa4b1;
+  --sk-1:#eef1f4;
+  --sk-2:#e2e7ec;
+  --scrim:rgba(24,32,44,.42);
+  --cover-bg:#e9edf2;
+
+  /* 浅色下的阴影要轻得多，照搬深色的黑影子会像一圈脏边 */
+  --sh-1:0 1px 2px rgba(16,24,40,.06);
+  --sh-2:0 1px 2px rgba(16,24,40,.05), 0 10px 28px -18px rgba(16,24,40,.2);
+  --sh-3:0 2px 4px rgba(16,24,40,.08), 0 18px 44px -20px rgba(16,24,40,.24);
 }
 
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--text);font:13px/1.55 var(--font);-webkit-font-smoothing:antialiased}
 h1,h2,h3,p{margin:0}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
 svg.i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 
-/* ---------- 壳 ---------- */
-.app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
-.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-5) var(--sp-3) var(--sp-4);background:var(--side);border-right:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:10px;padding:0 var(--sp-2)}
-.brand .mark{display:grid;place-items:center;width:30px;height:30px;border-radius:var(--r-sm);background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-bright)}
-.brand .mark svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.brand b{display:block;font-weight:600;letter-spacing:-.01em}
-.brand small{display:block;font-size:11px;color:var(--text-3)}
+/* ---------- 壳 ----------
+   侧栏宽度由 --side-w 驱动，收起时只改这一个值：
+   grid-template-columns 是可动画属性，所以标签淡出和轨道收窄是同一条时间线。 */
+.app{display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);min-height:100vh;transition:grid-template-columns var(--motion-medium) var(--ease)}
+:root[data-rail="1"] .app{grid-template-columns:var(--side-w-rail) minmax(0,1fr)}
+
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:var(--sp-5);padding:var(--sp-4) var(--sp-3);background:var(--side);border-right:1px solid var(--line);overflow:hidden}
+.side-top{display:flex;align-items:center;gap:var(--sp-2)}
+
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:2px;border-radius:var(--r);text-decoration:none;color:inherit}
+.brand .mark{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-bright);transition:background-color var(--motion-base) var(--ease),color var(--motion-base) var(--ease)}
+.brand:hover .mark{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.brand .mark svg{width:17px;height:17px;display:block}
+.brand-text{min-width:0;white-space:nowrap;transition:opacity var(--motion-fast) var(--ease)}
+.brand-text b{display:block;font-weight:600;letter-spacing:-.01em}
+.brand-text small{display:block;font-size:11px;color:var(--text-3)}
+
+.rail-toggle{display:grid;place-items:center;width:30px;height:30px;flex:none;padding:0;border:1px solid transparent;border-radius:var(--r);background:transparent;color:var(--text-3);cursor:pointer;transition:color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease)}
+.rail-toggle:hover{color:var(--text);background:var(--surface-2);border-color:var(--line)}
+.rail-toggle:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.rail-toggle svg{transition:transform var(--motion-medium) var(--ease)}
+:root[data-rail="1"] .rail-toggle svg{transform:rotate(180deg)}
 
 .nav{position:relative;display:flex;flex-direction:column;gap:2px}
-.nav-indicator{position:absolute;left:0;top:0;width:2px;height:20px;border-radius:var(--r-full);background:var(--accent);transform:translateY(0);transition:transform var(--motion-base) var(--ease-out)}
-.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 13px;border-radius:var(--r-sm);color:var(--text-2);text-decoration:none;transition:background-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out)}
+.nav-indicator{position:absolute;left:0;top:0;width:2px;height:20px;background:var(--accent);transform:translateY(0);transition:transform var(--motion-base) var(--ease),opacity var(--motion-fast) var(--ease)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r);color:var(--text-2);text-decoration:none;white-space:nowrap;transition:background-color var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
 .nav-item:hover{background:var(--surface-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
 .nav-item:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
 .nav-item[aria-current="true"]{background:var(--accent-soft);color:var(--accent-bright)}
-.nav-item .n{margin-left:auto;font:11px/1 var(--mono);color:var(--text-3);font-variant-numeric:tabular-nums}
+.nav-item .lbl{transition:opacity var(--motion-fast) var(--ease)}
+.nav-item .n{margin-left:auto;font:11px/1 var(--mono);color:var(--text-3);font-variant-numeric:tabular-nums;transition:opacity var(--motion-fast) var(--ease)}
 
-.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:var(--sp-3) var(--sp-2) 0;border-top:1px solid var(--line)}
-.row-s{display:flex;align-items:center;gap:7px;color:var(--text-3)}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--text-3);flex:none;transition:background-color var(--motion-base) var(--ease-out)}
+.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:var(--sp-3) 2px 0;border-top:1px solid var(--line)}
+.row-s{display:flex;align-items:center;gap:7px;color:var(--text-3);white-space:nowrap}
+.row-s .txt{transition:opacity var(--motion-fast) var(--ease)}
+.dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--text-3);transition:background-color var(--motion-base) var(--ease)}
 .dot.ok{background:var(--accent)}
 .dot.dirty{background:var(--warn)}
 .dot.err{background:var(--err)}
 
+/* 收起态：文字整体让位，只留图标与状态点。用 opacity 而不是 display，
+   这样宽度动画期间文字是淡出的，不会先跳一下再收。
+
+   三个必须显式覆盖的属性，少一个侧栏里就会有元素对不齐：
+   1) flex-basis 要归零。.lbl/.n 是 flex 子项，宽度由 flex-basis 决定，
+      只写 width:0 在 basis 仍是 auto 时会被内容撑开。
+   2) .n 的 margin-left:auto 要清掉。留着它，有角标的项被 auto 外边距顶到左边、
+      没角标的项被 justify-content:center 推到中间，同一个列表里跑出两套对齐。
+   3) 所有容器的 gap 要归零（.nav-item / .brand / .row-s）。gap 夹在图标和
+      0 宽标签之间仍然占位：有没有角标差一个 gap，图标就错开半个间距；
+      品牌标记和状态点则是被这个 gap 整体推向左侧。
+   判断标准只有一个：收起后侧栏里每个图标的中心 x 必须相同。 */
+:root[data-rail="1"] .brand-text,
+:root[data-rail="1"] .nav-item .lbl,
+:root[data-rail="1"] .nav-item .n,
+:root[data-rail="1"] .row-s .txt{opacity:0;pointer-events:none;flex:0 0 0px;width:0;margin:0;overflow:hidden}
+:root[data-rail="1"] .side{padding-left:var(--sp-2);padding-right:var(--sp-2);align-items:center}
+:root[data-rail="1"] .side-top{flex-direction:column;gap:var(--sp-2)}
+/* 品牌标记是 32px 的方块，比 15px 的导航图标宽，所以除了清 gap 还要自己居中 */
+:root[data-rail="1"] .brand{flex:none;justify-content:center;gap:0;padding:0}
+:root[data-rail="1"] .nav{width:100%}
+:root[data-rail="1"] .nav-item{justify-content:center;gap:0;padding:9px 0}
+:root[data-rail="1"] .row-s{gap:0}
+:root[data-rail="1"] .side-foot{align-items:center;width:100%}
+
 .main{display:flex;flex-direction:column;min-width:0}
-.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:var(--sp-4);padding:var(--sp-3) var(--sp-6);background:rgba(10,12,15,.82);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:var(--sp-4);padding:var(--sp-3) var(--sp-6);background:var(--topbar-bg);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .tb-title{display:flex;align-items:baseline;gap:10px;min-width:0}
 .tb-title h1{font-size:20px;font-weight:600;letter-spacing:-.02em;white-space:nowrap}
-.path-chip{font:11px/1 var(--mono);color:var(--text-3);padding:4px 8px;border:1px solid var(--line);border-radius:var(--r-full);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38ch}
+.path-chip{font:11px/1 var(--mono);color:var(--text-3);padding:4px 8px;border:1px solid var(--line);border-radius:var(--r);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38ch}
 .tb-actions{margin-left:auto;display:flex;align-items:center;gap:var(--sp-3)}
 .status{display:inline-flex;align-items:center;gap:6px;color:var(--text-3);max-width:44ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status.ok{color:var(--accent-bright)}
 .status.err{color:var(--err)}
 
+/* ---------- 主题切换（右上角）----------
+   三档：跟随系统 / 浅色 / 深色。用分段控件而不是单个循环按钮，
+   因为「现在是哪一档」得一眼看得出来，循环按钮只能靠图标猜。 */
+.theme-seg{display:inline-flex;flex:none;gap:2px;padding:2px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.theme-seg button{display:grid;place-items:center;width:28px;height:24px;padding:0;border:0;border-radius:var(--r);background:transparent;color:var(--text-3);cursor:pointer;transition:color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease)}
+.theme-seg button:hover{color:var(--text);background:var(--surface-3)}
+.theme-seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-bright)}
+.theme-seg button:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.theme-seg svg{width:15px;height:15px}
+
 .content{display:flex;flex-direction:column;gap:var(--sp-4);padding:var(--sp-5) var(--sp-6) 96px;max-width:1180px;width:100%}
 
+/* 撑开剩余空间，把后面的按钮推到右边。
+   面板底栏、工具条、本季新番计数行三处都要这个行为，原先各写各的：
+   .panel-foot 用 margin-left:auto、.season-bar 用 flex:1，而 .toolbar 里那个
+   <span class="spacer"> 一条规则都没有，宽度是 0，等于没写。合成一条全局规则。 */
+.spacer{flex:1 1 auto}
+
 /* ---------- 面板 ---------- */
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-5);box-shadow:var(--sh-2);scroll-margin-top:84px}
-.panel-head{display:flex;align-items:center;gap:10px;margin-bottom:var(--sp-2)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--sp-5);box-shadow:var(--sh-2);scroll-margin-top:84px;animation:panel-in var(--motion-medium) var(--ease) backwards}
+@keyframes panel-in{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+/* 首屏依次浮上来，但延迟封顶：第八块等 280ms 才动就已经像卡了 */
+.content > .panel:nth-child(1){animation-delay:0ms}
+.content > .panel:nth-child(2){animation-delay:35ms}
+.content > .panel:nth-child(3){animation-delay:70ms}
+.content > .panel:nth-child(4){animation-delay:105ms}
+.content > .panel:nth-child(5){animation-delay:140ms}
+.content > .panel:nth-child(6){animation-delay:175ms}
+.content > .panel:nth-child(7){animation-delay:210ms}
+.content > .panel:nth-child(8){animation-delay:245ms}
+
+/* 面板头。可以只放标题，也可以在右边挂一个区块级动作（.spacer 撑开，见「本季新番」的刷新列表）——
+   挂上按钮后这一行会从 23px 长到 36px，标题仍然垂直居中，和下面的说明之间反而更透气。 */
+.panel-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .panel-head h2{font-size:15px;font-weight:600;letter-spacing:-.01em}
-.panel-head .idx{font:11px/1 var(--mono);color:var(--text-3);padding:3px 6px;border:1px solid var(--line);border-radius:var(--r-xs)}
-.lede{color:var(--text-2);max-width:78ch;margin-bottom:var(--sp-4)}
-.lede code{font:11px var(--mono);color:var(--accent-bright);background:var(--accent-soft);border-radius:var(--r-xs);padding:1px 5px}
+.lede{color:var(--text-2);margin-bottom:var(--sp-4)}
+.lede code{font:11px var(--mono);color:var(--accent-bright);background:var(--accent-soft);border-radius:var(--r);padding:1px 5px}
 
 /* ---------- 行 / 网格 ---------- */
 .list{display:flex;flex-direction:column;gap:2px}
-.row{display:grid;gap:var(--sp-2);align-items:center;padding:6px;margin:0 -6px;border-radius:var(--r-sm);transition:background-color var(--motion-fast) var(--ease-out)}
+.row{display:grid;gap:var(--sp-2);align-items:center;padding:6px;margin:0 -6px;border-radius:var(--r);transition:background-color var(--motion-fast) var(--ease)}
 .row:focus-within{background:var(--surface-2)}
 .row-head{display:grid;gap:var(--sp-2);padding:0 6px;margin:0 -6px var(--sp-2);font-size:11px;color:var(--text-3)}
-.row.enter{animation:row-in var(--motion-base) var(--ease-out)}
-.row.leave{animation:row-out var(--motion-fast) var(--ease-out) forwards}
+.row.enter{animation:row-in var(--motion-base) var(--ease)}
+.row.leave{animation:row-out var(--motion-fast) var(--ease) forwards}
 @keyframes row-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
 @keyframes row-out{to{opacity:0;transform:translateY(-4px)}}
 
@@ -118,107 +292,250 @@ svg.i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-widt
 
 .field{display:flex;flex-direction:column;gap:6px}
 .field > span{font-size:11px;color:var(--text-3)}
+/* 底栏里的窄字段：标签和控制项并排。
+   竖排的字段放进 .panel-foot 会连标签一起算进行高（11px 标签 + 6px gap + 36px 控件
+   = 58.5px），那一行的底栏就比别的面板高 23px，里面的输入框也比同行的按钮低 12px。
+   并排之后这一行的高度仍然由控件决定，和别的底栏一模一样。 */
+.field.inline{flex-direction:row;align-items:center;gap:var(--sp-2);min-width:0}
+.field.inline > span{white-space:nowrap}
+.field.inline .input{width:72px;flex:none}
 .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--sp-3)}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--sp-3)}
-.toolbar{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)}
-.toolbar .spacer{margin-left:auto}
 .note{color:var(--text-3)}
 
+/* ---------- 面板底栏 ----------
+   会动配置文件的区块各自带一个保存按钮：改哪块就在哪块存，
+   不用把视线拉回顶栏去找那个唯一的入口。 */
+.panel-foot{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--line)}
+.panel-foot .note{flex:1 1 auto;min-width:0}
+
+/* 工具条：面板顶部那一行开关 / 按钮（本季新番、执行）。
+   这个类之前在 HTML 里用了两处，CSS 里一条规则都没有 —— 整行是 display:block，
+   开关和按钮按 inline 的 baseline 对齐。20px 的开关轨道和 35.5px 的按钮共用一个
+   文字基线，开关被顶得往下掉 6px，看着就是凹进去；元素间距也不是 gap，而是 HTML
+   源码里的换行空格（约 4px），和别处的 --sp-3 对不上。 */
+.toolbar{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.save-btn{position:relative}
+.save-btn .dirty-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--warn);opacity:0;transform:scale(.4);transition:opacity var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.save-btn.is-dirty .dirty-dot{opacity:1;transform:none}
+/* 保存成功的一下确认：走 animation 而不是 setTimeout 摘 class，
+   这样「闪多久」由 CSS 决定，JS 只负责在 animationend 时收尾。 */
+.save-btn.done{animation:save-flash 900ms var(--ease)}
+@keyframes save-flash{
+  0%{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-bright)}
+  70%{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-bright)}
+  100%{background:var(--surface-2);border-color:var(--line-2);color:var(--text)}
+}
+
 /* ---------- 控件 ---------- */
-.input,select{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 9px;transition:border-color var(--motion-fast) var(--ease-out),background-color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out)}
-.input:hover,select:hover{border-color:var(--line-2)}
-.input:focus,select:focus{outline:none;border-color:var(--accent);background:#0d1116;box-shadow:0 0 0 3px var(--accent-soft)}
-.input:focus-visible,select:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
-.input::placeholder{color:var(--text-3)}
-.input.mono{font-family:var(--mono)}
+.input,select,textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:7px 9px;transition:border-color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
+/* 单行控件钉死高度。textarea 是多行的，不参与。 */
+.input:not(textarea),select{height:var(--ctl-h)}
+textarea{resize:vertical;line-height:1.5}
+.input:hover,select:hover,textarea:hover{border-color:var(--line-2)}
+.input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:var(--input-focus-bg);box-shadow:0 0 0 3px var(--accent-soft)}
+.input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.input::placeholder,textarea::placeholder{color:var(--text-3)}
+.input.mono,textarea.mono{font-family:var(--mono)}
 input[type=number]{font-variant-numeric:tabular-nums}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);cursor:pointer;white-space:nowrap;transition:background-color var(--motion-fast) var(--ease-out),border-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out),box-shadow var(--motion-fast) var(--ease-out),transform var(--motion-fast) var(--ease-out)}
-.btn:hover{background:var(--surface-3);border-color:#3b4553;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--ctl-h);padding:7px 12px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);cursor:pointer;white-space:nowrap;transition:background-color var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.btn:hover{background:var(--surface-3);border-color:var(--line-hover);box-shadow:var(--sh-1)}
 .btn:active{transform:scale(.98)}
 .btn:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
 .btn[disabled]{opacity:.5;cursor:not-allowed;transform:none}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
-.btn.primary:hover{background:var(--accent-bright);border-color:var(--accent-bright)}
+.btn.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
 .btn.ghost{background:transparent}
 .btn.ghost:hover{background:var(--surface-2)}
-.btn.danger{color:#ef938c;border-color:#3a2b2b;background:transparent}
-.btn.danger:hover{background:rgba(242,104,95,.1);border-color:rgba(242,104,95,.42);box-shadow:none}
-.btn.icon{padding:7px;width:33px}
+.btn.danger{color:var(--danger-text);border-color:var(--danger-line);background:transparent}
+.btn.danger:hover{background:var(--danger-soft);border-color:var(--danger-line-strong);box-shadow:none}
+/* 纯图标按钮：和输入框一样高、一样宽，就是个正方形。
+   原来 padding:7px + width:33px —— 高度由那个 15px 的 svg 决定（30.3），
+   宽度写死 33，和同行的输入框（35.5）既不等高也不成比例。 */
+.btn.icon{padding:0;width:var(--ctl-h)}
 .spinner{width:13px;height:13px;border-radius:50%;border:1.6px solid currentColor;border-top-color:transparent;opacity:.85;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r-full);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:background-color var(--motion-fast) var(--ease-out),border-color var(--motion-fast) var(--ease-out),color var(--motion-fast) var(--ease-out)}
-.chip:hover{border-color:#3b4553;color:var(--text)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:background-color var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
+.chip:hover{border-color:var(--line-hover);color:var(--text)}
 .chip:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
 .chip[aria-pressed="true"]{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-bright)}
 .chip .ord{font:11px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--text-3)}
 .chip[aria-pressed="true"] .ord{color:var(--accent-bright)}
 
-.switch{display:inline-flex;align-items:center;gap:9px;color:var(--text-2);cursor:pointer;transition:color var(--motion-fast) var(--ease-out)}
+.switch{display:inline-flex;align-items:center;gap:9px;color:var(--text-2);cursor:pointer;transition:color var(--motion-fast) var(--ease)}
 .switch:hover{color:var(--text)}
-.switch input{appearance:none;flex:none;width:34px;height:20px;margin:0;border-radius:var(--r-full);background:var(--surface-3);border:1px solid var(--line-2);position:relative;cursor:pointer;transition:background-color var(--motion-base) var(--ease-out),border-color var(--motion-base) var(--ease-out)}
-.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#8b95a3;transition:transform var(--motion-base) var(--ease-out),background-color var(--motion-base) var(--ease-out)}
+.switch input{appearance:none;flex:none;width:34px;height:20px;margin:0;border-radius:var(--r);background:var(--surface-3);border:1px solid var(--line-2);position:relative;cursor:pointer;transition:background-color var(--motion-base) var(--ease),border-color var(--motion-base) var(--ease)}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--switch-knob);transition:transform var(--motion-base) var(--ease),background-color var(--motion-base) var(--ease)}
 .switch input:checked{background:var(--accent-soft);border-color:var(--accent)}
 .switch input:checked::after{transform:translateX(14px);background:var(--accent-bright)}
 .switch input:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
 
-details.adv{margin-top:var(--sp-4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
-details.adv > summary{list-style:none;cursor:pointer;padding:10px 12px;color:var(--text-2);display:flex;align-items:center;gap:8px;transition:color var(--motion-fast) var(--ease-out)}
+details.adv{margin-top:var(--sp-4);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+details.adv > summary{list-style:none;cursor:pointer;padding:10px 12px;color:var(--text-2);display:flex;align-items:center;gap:8px;transition:color var(--motion-fast) var(--ease)}
 details.adv > summary::-webkit-details-marker{display:none}
 details.adv > summary:hover{color:var(--text)}
-details.adv > summary:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;border-radius:var(--r-sm)}
-details.adv > summary .caret{transition:transform var(--motion-base) var(--ease-out)}
+details.adv > summary:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;border-radius:var(--r)}
+details.adv > summary .caret{transition:transform var(--motion-base) var(--ease)}
 details.adv[open] > summary .caret{transform:rotate(90deg)}
-details.adv .adv-body{padding:0 12px 14px}
+details.adv .adv-body{padding:0 12px 14px;animation:adv-in var(--motion-base) var(--ease)}
+@keyframes adv-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
 /* ---------- 空状态 / 骨架 ---------- */
-.empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:var(--sp-8) var(--sp-4);text-align:center;border:1px dashed var(--line-2);border-radius:var(--r-md);color:var(--text-2)}
+.empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:var(--sp-8) var(--sp-4);text-align:center;border:1px dashed var(--line-2);border-radius:var(--r);color:var(--text-2)}
 .empty svg{width:22px;height:22px;stroke:var(--text-3);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.empty .note{max-width:52ch}
-.sk{height:11px;border-radius:var(--r-xs);background:linear-gradient(90deg,#171c22,#20272f,#171c22);background-size:200% 100%;animation:sk 1.2s linear infinite}
+/* 空状态里的说明文字。
+   原来是 max-width:52ch —— ch 是「0」的宽度，中文一个字差不多占两个 ch，
+   52ch 只装得下约 30 个汉字，于是「点『预览计划』会按规则爬取站点并列出将要写入的
+   差异，不会改动实例。」这一句（需要 429px）在 396px 里被挤成两行，
+   而它的容器 .empty 有 1091px 宽 —— 明明放得下。改用像素上限。 */
+.empty .note{max-width:640px}
+.sk{height:11px;border-radius:var(--r);background:linear-gradient(90deg,var(--sk-1),var(--sk-2),var(--sk-1));background-size:200% 100%;animation:sk 1.2s linear infinite}
 @keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
-.sk-rows{display:flex;flex-direction:column;gap:12px;padding:var(--sp-4);border:1px solid var(--line);border-radius:var(--r-md)}
+.sk-rows{display:flex;flex-direction:column;gap:12px;padding:var(--sp-4);border:1px solid var(--line);border-radius:var(--r)}
 
 /* ---------- 结果 ---------- */
 .summary{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-3)}
 .stats{display:flex;gap:var(--sp-2)}
-.stat{display:flex;flex-direction:column;gap:2px;min-width:76px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.stat{display:flex;flex-direction:column;gap:2px;min-width:76px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
 .stat .k{font-size:11px;color:var(--text-3)}
 .stat .v{font:600 20px/1.1 var(--mono);font-variant-numeric:tabular-nums}
 .stat.hi{border-color:var(--accent-line);background:var(--accent-soft)}
 .stat.hi .v{color:var(--accent-bright)}
 .sites{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
-.site{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-3);border:1px solid var(--line);border-radius:var(--r-full);padding:4px 9px}
+.site{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-3);border:1px solid var(--line);border-radius:var(--r);padding:4px 9px}
 .site b{color:var(--text-2);font-weight:600;font-variant-numeric:tabular-nums}
-.site.bad{border-color:rgba(242,104,95,.4);color:#ef938c}
+.site.bad{border-color:var(--danger-line-strong);color:var(--danger-text)}
 
-.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-md);animation:fade var(--motion-base) var(--ease-out)}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);animation:fade var(--motion-base) var(--ease)}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 table{width:100%;border-collapse:collapse}
-thead th{position:sticky;top:0;z-index:1;background:#12161c;text-align:left;font-size:11px;font-weight:600;color:var(--text-3);padding:9px 12px;border-bottom:1px solid var(--line)}
+thead th{position:sticky;top:0;z-index:1;background:var(--thead-bg);text-align:left;font-size:11px;font-weight:600;color:var(--text-3);padding:9px 12px;border-bottom:1px solid var(--line)}
 tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 tbody tr:last-child td{border-bottom:0}
-tbody tr{transition:background-color var(--motion-fast) var(--ease-out)}
+tbody tr{transition:background-color var(--motion-fast) var(--ease)}
 tbody tr:hover{background:var(--surface-2)}
 td.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-all;color:var(--text-2)}
 td.act{white-space:nowrap}
 
-.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:var(--r-full);border:1px solid var(--line-2);color:var(--text-2)}
-.tag.update{border-color:rgba(224,164,88,.4);color:#e6b877}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:var(--r);border:1px solid var(--line-2);color:var(--text-2)}
+.tag.update{border-color:var(--warn-line);color:var(--warn-text)}
 .tag.add{border-color:var(--accent-line);color:var(--accent-bright)}
 .tag.skip{border-color:var(--line);color:var(--text-3)}
 .tag.target{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-bright)}
 
 .diff{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;padding:2px 0}
-.diff .fld{font:11px/1.5 var(--mono);color:var(--text-3);border:1px solid var(--line);border-radius:var(--r-xs);padding:0 6px}
+.diff .fld{font:11px/1.5 var(--mono);color:var(--text-3);border:1px solid var(--line);border-radius:var(--r);padding:0 6px}
 .diff .from{font-family:var(--mono);color:var(--text-3);word-break:break-all}
 .diff .arw{color:var(--text-3)}
 .diff .to{font-family:var(--mono);color:var(--text);word-break:break-all}
 
+/* ---------- 选番弹窗 ----------
+   原生 <dialog>：焦点陷阱、Esc 关闭、背景 inert 都是浏览器给的，
+   自己用 div 重写这三样很容易漏掉一个，而漏掉的那个就是无障碍缺口。 */
+.picker{width:min(720px,94vw);max-height:min(84vh,720px);padding:0;border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface);color:var(--text);box-shadow:var(--sh-3);overflow:hidden;flex-direction:column}
+.picker[open]{display:flex;animation:picker-in var(--motion-medium) var(--ease)}
+.picker.closing{animation:picker-out 160ms var(--ease) forwards}
+@keyframes picker-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes picker-out{to{opacity:0;transform:translateY(6px) scale(.99)}}
+.picker::backdrop{background:var(--scrim);animation:scrim-in var(--motion-base) var(--ease)}
+.picker.closing::backdrop{animation:scrim-out 160ms var(--ease) forwards}
+@keyframes scrim-in{from{opacity:0}to{opacity:1}}
+@keyframes scrim-out{to{opacity:0}}
+
+.picker-top{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-4) var(--sp-4) var(--sp-3)}
+.picker-top h2{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.picker-top .btn{margin-left:auto}
+
+/* 焦点环画在 input 自己身上，而不是靠外层 :focus-within 代劳：
+   真正获得焦点的是 input，键盘用户的可视指示就该落在同一个元素上。 */
+.picker-search{position:relative;margin:0 var(--sp-4)}
+.picker-search svg.i{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-3);pointer-events:none}
+.picker-search .spinner{position:absolute;right:12px;top:50%;margin-top:-6.5px;opacity:0;animation:none;transition:opacity var(--motion-fast) var(--ease)}
+.picker-search.busy .spinner{opacity:.85;animation:spin .7s linear infinite}
+.picker-search input{width:100%;padding:10px 36px 10px 34px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface-2);transition:border-color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
+.picker-search input:hover{border-color:var(--line-hover)}
+.picker-search input::-webkit-search-cancel-button{display:none}
+.picker-search input:focus{outline:none;border-color:var(--accent);background:var(--input-focus-bg);box-shadow:0 0 0 3px var(--accent-soft)}
+.picker-search input:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+
+.picker-body{flex:1;min-height:180px;overflow-y:auto;padding:var(--sp-3) var(--sp-4) var(--sp-4);display:flex;flex-direction:column;gap:6px;scrollbar-width:thin}
+.picker-foot{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--line);background:var(--surface-2)}
+.picker-foot .note{flex:1;min-width:0}
+
+.res{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:var(--sp-3);align-items:start;width:100%;padding:var(--sp-2);border:1px solid transparent;border-radius:var(--r);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background-color var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.res:hover{background:var(--surface-2);border-color:var(--line)}
+.res:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.res[data-active="true"]{background:var(--accent-soft);border-color:var(--accent-line)}
+.res[aria-disabled="true"]{cursor:default;opacity:.55}
+.res[aria-disabled="true"]:hover{background:transparent;border-color:transparent}
+.res-cover{position:relative;width:52px;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;background:var(--cover-bg);border:1px solid var(--line)}
+.res-cover img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity var(--motion-medium) var(--ease)}
+.res-cover img.on{opacity:1}
+.res-cover .ph{position:absolute;inset:0;display:grid;place-items:center;color:var(--text-3)}
+.res-cover .ph svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5}
+.res-main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.res-title{font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-jp{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-meta{display:flex;flex-wrap:wrap;gap:9px;font:11px/1.4 var(--mono);color:var(--text-3);font-variant-numeric:tabular-nums}
+.res-sum{font-size:12px;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.res-add{align-self:center;font-size:11px;color:var(--text-3);border:1px solid var(--line);border-radius:var(--r);padding:3px 8px;white-space:nowrap;transition:border-color var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease)}
+.res:hover .res-add{border-color:var(--accent-line);color:var(--accent-bright)}
+.res[aria-disabled="true"] .res-add{border-color:var(--line);color:var(--text-3);background:var(--surface-2)}
+.res.enter{animation:res-in var(--motion-base) var(--ease) backwards}
+
+/* ---------- 本季新番 ----------
+   一屏扫得完的卡片。已添加的置灰、勾不动，省得同一部番加两遍。
+   勾选框本体视觉隐藏但仍可聚焦，键盘用户靠 :focus-visible 那圈描边定位。 */
+/* 开关行下面紧跟着选择行。两行之间只留 8px：它们是一组控件，
+   16px（--sp-4）会让上下两个右对齐按钮看起来像两个不相干的动作，
+   而上面那 16px（lede 的下边距）已经把「说明」和「控件」分开了。 */
+.season-bar{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin:var(--sp-2) 0 var(--sp-3)}
+.season-warn{margin:0 0 var(--sp-3);padding:8px 10px;border:1px solid var(--warn-line);border-radius:var(--r);color:var(--warn-text);font-size:12px}
+/* 「全选」不许被挤：窄屏下它原来是 flex 项，会被后面的计数文字压到换行，
+   整行跟着从 20.1px 长到 40.3px，同一行的高度就变了。 */
+.check-all{display:inline-flex;align-items:center;gap:7px;flex:none;white-space:nowrap;color:var(--text-2);cursor:pointer;transition:color var(--motion-fast) var(--ease)}
+.check-all:hover{color:var(--text)}
+/* 原生复选框在深色界面里是浏览器给的浅灰方块（13×13、无边框、无圆角），
+   和同一个面板里 .switch 那条 34×20 的自绘轨道完全是两套东西。
+   这里把它拉回同一套令牌：和开关轨道同高（20px）、同一个 --r、同一组描边色，
+   选中用 accent，半选（部分勾选时）画一条横杠。点击区域也从 13px 放到 20px。 */
+.check-all input{appearance:none;flex:none;position:relative;width:20px;height:20px;margin:0;padding:0;border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface-3);cursor:pointer;transition:background-color var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease)}
+.check-all input:hover{border-color:var(--line-hover)}
+.check-all input:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.check-all input:checked{background:var(--accent);border-color:var(--accent)}
+.check-all input:checked::after{content:"";position:absolute;inset:0;margin:auto;width:5px;height:9px;border:solid var(--accent-ink);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.check-all input:indeterminate{background:var(--accent-soft);border-color:var(--accent)}
+.check-all input:indeterminate::after{content:"";position:absolute;inset:0;margin:auto;width:10px;height:2px;background:var(--accent-bright);border:0;transform:none}
+.season-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(234px,1fr));gap:var(--sp-2)}
+.season-grid[aria-busy="true"]{opacity:.45;pointer-events:none}
+.season-card{position:relative;display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);cursor:pointer;animation:res-in var(--motion-base) var(--ease) backwards;transition:border-color var(--motion-fast) var(--ease),background-color var(--motion-fast) var(--ease)}
+.season-card:hover{border-color:var(--accent-line)}
+.season-card:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.season-card:has(input:focus-visible){outline:2px solid var(--accent-line);outline-offset:1px}
+.season-card.is-added{cursor:default;opacity:.45}
+.season-card.is-added:hover{border-color:var(--line)}
+.season-pick{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.season-cover{position:relative;display:grid;place-items:center;width:38px;aspect-ratio:2/3;border:1px solid var(--line);border-radius:var(--r);background:var(--cover-bg);overflow:hidden;color:var(--text-3)}
+.season-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity var(--motion-medium) var(--ease)}
+.season-cover img.on{opacity:1}
+.season-body{min-width:0;display:flex;flex-direction:column;gap:2px}
+.season-title{font-size:12px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 「已添加」是绝对定位在右上角的，标题铺满整行时会从它底下穿过去 ——
+   省略号都还没出现，最后几个字已经被标签盖住了。给已添加的卡片在标题行右侧
+   留出标签的宽度（43px 标签 + 6px 右边距 + 一点间隙），标题就会提前省略。 */
+.season-card.is-added .season-title{padding-right:48px}
+.season-jp{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.season-meta{font:10px/1.4 var(--mono);color:var(--text-3);font-variant-numeric:tabular-nums}
+.season-tag{position:absolute;top:6px;right:6px;font:10px/1 var(--mono);padding:3px 5px;border-radius:var(--r);background:var(--bg);color:var(--text-3);border:1px solid var(--line)}
+.season-empty{grid-column:1/-1;padding:var(--sp-5);text-align:center;color:var(--text-3);border:1px dashed var(--line);border-radius:var(--r)}
+@keyframes res-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.picker-msg{padding:var(--sp-8) var(--sp-4);text-align:center;color:var(--text-3)}
+
 /* ---------- toast ---------- */
 .toast-wrap{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;gap:8px}
-.toast{display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--surface-2);box-shadow:var(--sh-3);animation:toast-in var(--motion-medium) var(--ease-out),toast-out var(--motion-base) var(--ease-out) 2800ms forwards}
+.toast{display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface-2);box-shadow:var(--sh-3);animation:toast-in var(--motion-medium) var(--ease),toast-out var(--motion-base) var(--ease) 2800ms forwards}
 .toast.err{animation-delay:0s,6000ms}
 .toast svg.i{width:16px;height:16px}
 .toast.ok svg.i{color:var(--accent-bright)}
@@ -233,13 +550,25 @@ td.act{white-space:nowrap}
   .row-head{display:none}
 }
 @media (max-width:900px){
-  .app{grid-template-columns:1fr}
-  .side{position:static;height:auto;padding:var(--sp-4);gap:var(--sp-3);border-right:0;border-bottom:1px solid var(--line)}
+  /* 窄屏下侧栏改成顶部横条，收起轨道在这一档没有意义，直接禁用 */
+  .app,:root[data-rail="1"] .app{grid-template-columns:1fr}
+  .side,:root[data-rail="1"] .side{position:static;height:auto;padding:var(--sp-4);gap:var(--sp-3);border-right:0;border-bottom:1px solid var(--line);align-items:stretch}
+  .side-top,:root[data-rail="1"] .side-top{flex-direction:row}
+  .rail-toggle{display:none}
   .nav{flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:2px}
   .nav-indicator{display:none}
   .nav-item{white-space:nowrap}
   .nav-item .n{display:none}
   .side-foot{display:none}
+  /* 窄屏是横排布局，收起态那套「只留图标」的规则要整套撤销。
+     只恢复 opacity/width/overflow 不够：flex:0 0 0px、margin:0，以及
+     .nav-item / .brand 的 gap:0 和 padding 都还留着 —— 结果是图标和文字贴在一起，
+     品牌文字被压成 0 宽（.brand-text 有 min-width:0，拿不到 flex 的自动最小尺寸），
+     只能靠 overflow:visible 溢出画出来。 */
+  :root[data-rail="1"] .brand-text,
+  :root[data-rail="1"] .nav-item .lbl{opacity:1;width:auto;flex:0 1 auto;margin:0;overflow:visible}
+  :root[data-rail="1"] .brand{flex:1;justify-content:flex-start;gap:10px;padding:2px}
+  :root[data-rail="1"] .nav-item{gap:10px;padding:8px 10px}
   .topbar{padding:var(--sp-3) var(--sp-4)}
   .path-chip{display:none}
 }
@@ -248,12 +577,21 @@ td.act{white-space:nowrap}
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   .sk{animation-duration:1.2s !important;animation-iteration-count:infinite !important}
   .spinner{animation-duration:.7s !important;animation-iteration-count:infinite !important}
+  .app{transition:none}
 }
 </style>
 </head>
 <body>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- 品牌标记：取自 branding/anisync-mark-*.svg，把写死的深色换成 currentColor，
+       这样它跟着 accent 走，两套主题都不用各存一份。 -->
+  <symbol id="i-brand" viewBox="0 0 1024 1024">
+    <path d="M742.37 304.57A310 310 0 1 1 281.63 304.57" fill="none" stroke="currentColor" stroke-opacity=".9" stroke-width="64" stroke-linecap="round"/>
+    <path d="M337.83 242.15 317.59 369.24 284.68 301.18 213.55 275.57Z" fill="currentColor" stroke="none"/>
+    <rect x="322" y="348.8" width="380" height="120" rx="60" fill="currentColor" stroke="none"/>
+    <rect opacity=".5" x="392" y="555.2" width="240" height="120" rx="60" fill="currentColor" stroke="none"/>
+  </symbol>
   <symbol id="i-sync" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18 3v4h-4M6 21v-4h4"/></symbol>
   <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/></symbol>
@@ -269,30 +607,42 @@ td.act{white-space:nowrap}
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></symbol>
   <symbol id="i-caret" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
   <symbol id="i-empty" viewBox="0 0 24 24"><path d="M4 7h16v12H4z"/><path d="M4 7l2-3h12l2 3M9 12h6"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.8A8.5 8.5 0 0 1 9.2 3.5a8.5 8.5 0 1 0 11.3 11.3Z"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 4.5-4.5 3 3L15 12l5 5"/></symbol>
 </svg>
 
 <div class="app">
-  <aside class="side">
-    <div class="brand">
-      <span class="mark" aria-hidden="true"><svg><use href="#i-sync"/></svg></span>
-      <span><b>AniSync</b><small>主副 RSS 自动打点</small></span>
+  <aside class="side" id="side">
+    <div class="side-top">
+      <a class="brand" href="#p-instances" aria-label="AniSync 设置页">
+        <span class="mark" aria-hidden="true"><svg><use href="#i-brand"/></svg></span>
+        <span class="brand-text"><b>AniSync</b><small>主副 RSS 自动打点</small></span>
+      </a>
+      <button class="rail-toggle" id="railToggle" type="button" aria-expanded="true" aria-controls="side" aria-label="收起侧边栏" title="收起 / 展开侧边栏">
+        <svg class="i"><use href="#i-panel"/></svg>
+      </button>
     </div>
 
     <nav class="nav" id="nav" aria-label="设置分区">
       <span class="nav-indicator" id="navIndicator" aria-hidden="true"></span>
-      <a class="nav-item" href="#p-instances" data-target="p-instances" data-title="实例"><svg class="i"><use href="#i-server"/></svg><span>实例</span><span class="n" id="nInstances">0</span></a>
-      <a class="nav-item" href="#p-sources" data-target="p-sources" data-title="站点与爬取"><svg class="i"><use href="#i-globe"/></svg><span>站点与爬取</span></a>
-      <a class="nav-item" href="#p-rules" data-target="p-rules" data-title="规则"><svg class="i"><use href="#i-filter"/></svg><span>规则</span><span class="n" id="nRules">0</span></a>
-      <a class="nav-item" href="#p-deny" data-target="p-deny" data-title="排除"><svg class="i"><use href="#i-ban"/></svg><span>排除</span><span class="n" id="nDeny">0</span></a>
-      <a class="nav-item" href="#p-offsets" data-target="p-offsets" data-title="季度与偏移"><svg class="i"><use href="#i-shift"/></svg><span>季度与偏移</span><span class="n" id="nTargets">0</span></a>
-      <a class="nav-item" href="#p-sync" data-target="p-sync" data-title="同步与后台"><svg class="i"><use href="#i-sync"/></svg><span>同步与后台</span></a>
-      <a class="nav-item" href="#p-discover" data-target="p-discover" data-title="自动发现"><svg class="i"><use href="#i-eye"/></svg><span>自动发现</span><span class="n" id="nDiscover">关</span></a>
-      <a class="nav-item" href="#p-run" data-target="p-run" data-title="执行"><svg class="i"><use href="#i-play"/></svg><span>执行</span></a>
+      <a class="nav-item" href="#p-instances" data-target="p-instances" data-title="实例" title="实例"><svg class="i"><use href="#i-server"/></svg><span class="lbl">实例</span><span class="n" id="nInstances">0</span></a>
+      <a class="nav-item" href="#p-network" data-target="p-network" data-title="网络与代理" title="网络与代理"><svg class="i"><use href="#i-globe"/></svg><span class="lbl">网络与代理</span></a>
+      <a class="nav-item" href="#p-rules" data-target="p-rules" data-title="规则" title="规则"><svg class="i"><use href="#i-filter"/></svg><span class="lbl">规则</span><span class="n" id="nRules">0</span></a>
+      <a class="nav-item" href="#p-deny" data-target="p-deny" data-title="排除" title="排除"><svg class="i"><use href="#i-ban"/></svg><span class="lbl">排除</span><span class="n" id="nDeny">0</span></a>
+      <a class="nav-item" href="#p-offsets" data-target="p-offsets" data-title="季度与偏移" title="季度与偏移"><svg class="i"><use href="#i-shift"/></svg><span class="lbl">季度与偏移</span><span class="n" id="nTargets">0</span></a>
+      <a class="nav-item" href="#p-sync" data-target="p-sync" data-title="同步与后台" title="同步与后台"><svg class="i"><use href="#i-sync"/></svg><span class="lbl">同步与后台</span></a>
+      <a class="nav-item" href="#p-discover" data-target="p-discover" data-title="本季新番" title="本季新番"><svg class="i"><use href="#i-eye"/></svg><span class="lbl">本季新番</span><span class="n" id="nDiscover">关</span></a>
+      <a class="nav-item" href="#p-run" data-target="p-run" data-title="执行" title="执行"><svg class="i"><use href="#i-play"/></svg><span class="lbl">执行</span></a>
     </nav>
 
     <div class="side-foot">
-      <div class="row-s"><span class="dot ok" id="saveDot"></span><span id="saveState">已加载配置</span></div>
-      <div class="row-s" id="sideHint">改动写入同目录 config.yaml</div>
+      <div class="row-s"><span class="dot ok" id="saveDot"></span><span class="txt" id="saveState">已加载配置</span></div>
+      <div class="row-s"><span class="txt" id="sideHint">改动写入同目录 config.yaml</span></div>
     </div>
   </aside>
 
@@ -304,70 +654,80 @@ td.act{white-space:nowrap}
       </div>
       <div class="tb-actions">
         <span class="status" id="status" role="status" aria-live="polite"></span>
-        <button class="btn primary" id="saveBtn" onclick="save()" aria-label="保存配置">
-          <svg class="i"><use href="#i-check"/></svg><span>保存配置</span>
-        </button>
+        <div class="theme-seg" role="group" aria-label="主题">
+          <button type="button" data-theme-mode="auto" aria-pressed="true" aria-label="主题跟随系统" title="跟随系统"><svg class="i"><use href="#i-auto"/></svg></button>
+          <button type="button" data-theme-mode="light" aria-pressed="false" aria-label="浅色主题" title="浅色"><svg class="i"><use href="#i-sun"/></svg></button>
+          <button type="button" data-theme-mode="dark" aria-pressed="false" aria-label="深色主题" title="深色"><svg class="i"><use href="#i-moon"/></svg></button>
+        </div>
       </div>
     </header>
 
     <main class="content">
 
       <section class="panel" id="p-instances" aria-labelledby="h-instances">
-        <div class="panel-head"><span class="idx">01</span><h2 id="h-instances">ANI-RSS 实例</h2></div>
-        <p class="lede">一次同步，这里所有启用的实例同时生效。密钥支持 <code>${ENV_NAME}</code> 写法，避免明文落盘。</p>
+        <div class="panel-head"><h2 id="h-instances">ANI-RSS 实例</h2></div>
+        <p class="lede">同步时下面所有启用的实例一起生效。密钥可以写 <code>${ENV_NAME}</code>，不必明文落盘。</p>
         <div class="row row-head inst"><span>名字</span><span>地址</span><span>API Key</span><span></span><span></span></div>
         <div class="list" id="instances"></div>
-        <div class="toolbar">
+        <div class="panel-foot">
           <button class="btn" onclick="addInstance()" aria-label="添加实例"><svg class="i"><use href="#i-plus"/></svg>添加实例</button>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-instances" onclick="save(this)" aria-label="保存实例配置"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
-      <section class="panel" id="p-sources" aria-labelledby="h-sources">
-        <div class="panel-head"><span class="idx">02</span><h2 id="h-sources">站点数据与爬取顺序</h2></div>
-        <p class="lede">字幕组列表由实例的接口给出，AniSync 不自己爬网页。点下面的标签切换启用，数字是优先级顺序。</p>
+      <section class="panel" id="p-network" aria-labelledby="h-network">
+        <div class="panel-head"><h2 id="h-network">网络与代理</h2></div>
+        <p class="lede">拉不到站点数据或 Bangumi 时在这里填代理。留空则读系统环境变量。</p>
         <div class="grid-3">
-          <label class="field"><span>站点数据取自实例</span><select class="input" id="siteInstance" aria-label="站点数据取自实例"></select></label>
+          <label class="field"><span>代理地址</span><input class="input mono" id="proxy" placeholder="http://127.0.0.1:7890" aria-label="代理地址"></label>
           <label class="field"><span>站点超时（秒）</span><input class="input" type="number" id="timeout" min="5" max="120" placeholder="25" aria-label="站点超时秒数"></label>
           <label class="field"><span>缓存时长（分钟，0 = 不缓存）</span><input class="input" type="number" id="cacheMinutes" min="0" max="10080" placeholder="720" aria-label="缓存时长分钟"></label>
         </div>
-        <div class="toolbar" id="sourceOrder" role="group" aria-label="爬取优先级"></div>
-        <div class="toolbar">
-          <label class="switch"><input type="checkbox" id="stopOnFirst" aria-label="命中第一个站点就停止"><span>命中第一个站点就停止</span></label>
-          <span class="note">更快，但副 RSS 候选会变少</span>
+        <div class="panel-foot">
+          <span class="note">代理同时作用于站点数据、Bangumi 搜索与封面图。</span>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-network" onclick="save(this)" aria-label="保存网络配置"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
       <section class="panel" id="p-rules" aria-labelledby="h-rules">
-        <div class="panel-head"><span class="idx">03</span><h2 id="h-rules">规则</h2></div>
-        <p class="lede">正则 + 优先级，数字越小越优先。匹配对象是「字幕组名 + 最近的资源标题」，所以字幕类型也能排。作用域决定这条规则给主 RSS 还是副 RSS 排序。<b>副 RSS 是点名制</b>：只有被 <code>scope: standby</code> 规则点过名的组才会进副 RSS，没点名的一律不要。</p>
+        <div class="panel-head"><h2 id="h-rules">规则</h2></div>
+        <p class="lede">正则 + 优先级，数字越小越优先。作用域选<b>副 RSS</b> 的是点名制：没被点名的组不进副 RSS。</p>
         <div class="row row-head rule"><span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>限定站点</span><span></span></div>
         <div class="list" id="rules"></div>
-        <div class="toolbar">
+        <div class="panel-foot">
           <button class="btn" onclick="addRule()" aria-label="添加规则"><svg class="i"><use href="#i-plus"/></svg>添加规则</button>
-          <button class="btn ghost" onclick="addTypeRules()" aria-label="预置字幕类型规则">预置字幕类型规则</button>
+          <button class="btn ghost" onclick="addTypeRules()" aria-label="预置字幕类型规则">预置字幕类型</button>
           <span class="note" id="ruleFiles"></span>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-rules" onclick="save(this)" aria-label="保存规则"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
       <section class="panel" id="p-deny" aria-labelledby="h-deny">
-        <div class="panel-head"><span class="idx">04</span><h2 id="h-deny">排除</h2></div>
+        <div class="panel-head"><h2 id="h-deny">排除</h2></div>
         <p class="lede">命中即丢弃该候选，用来挡合集、BDRip 这类不想要的东西。</p>
         <div class="row row-head deny"><span>正则</span><span>备注</span><span></span></div>
         <div class="list" id="deny"></div>
-        <div class="toolbar">
+        <div class="panel-foot">
           <button class="btn" onclick="addDeny()" aria-label="添加排除"><svg class="i"><use href="#i-plus"/></svg>添加排除</button>
-          <label class="field spacer" style="max-width:220px"><span>每个订阅最多保留几条副 RSS</span><input class="input" type="number" id="maxStandby" min="0" max="20" placeholder="3" aria-label="每个订阅最多保留几条副 RSS"></label>
+          <label class="field inline"><span>每个订阅最多留几条副 RSS</span><input class="input" type="number" id="maxStandby" min="0" max="20" placeholder="1" aria-label="每个订阅最多保留几条副 RSS"></label>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-deny" onclick="save(this)" aria-label="保存排除规则"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
       <section class="panel" id="p-offsets" aria-labelledby="h-offsets">
-        <div class="panel-head"><span class="idx">05</span><h2 id="h-offsets">季度与剧集偏移</h2></div>
-        <p class="lede">加番剧的常规做法：提前把 <code>bgm 链接</code> 贴进来，一般只规定<b>季度</b>；<b>集偏移得看是哪个组才写</b>，因为不同组的 RSS 起数不一样。命中该番剧的订阅都按这里的值写入，<b>实例里已有的订阅同样生效</b>。匹配先按 <code>bgmId</code>，再按标题包含匹配，写「冰之城墙」也能命中。留空表示不碰订阅里已有的值。</p>
+        <div class="panel-head"><h2 id="h-offsets">季度与剧集偏移</h2></div>
+        <p class="lede">按番剧规定季度与集偏移，命中该番剧的订阅都按这里的值写入。留空 = 不碰订阅里已有的值。</p>
         <div class="row row-head target"><span>番剧标题 / bgm 链接</span><span>bgmId</span><span>季度</span><span>主 RSS 偏移</span><span>副 RSS 偏移</span><span>限定实例</span><span>新增启用</span><span></span></div>
         <div class="list" id="targets"></div>
-        <div class="toolbar">
-          <button class="btn" onclick="addTarget()" aria-label="添加番剧"><svg class="i"><use href="#i-plus"/></svg>添加番剧</button>
-          <span class="note">例：季度 2、主副偏移 -12，用于第 2 季 RSS 从第 13 集接着数</span>
+        <div class="panel-foot">
+          <button class="btn primary" onclick="openPicker()" aria-label="搜索并添加番剧"><svg class="i"><use href="#i-search"/></svg>添加番剧</button>
+          <button class="btn ghost" onclick="addTarget()" aria-label="手动添加一行">手动加一行</button>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-offsets" onclick="save(this)" aria-label="保存番剧配置"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
         <details class="adv">
           <summary><svg class="i caret"><use href="#i-caret"/></svg><span>全局兜底（番剧没命中上面任何一条时才用，一般留空）</span></summary>
@@ -377,45 +737,63 @@ td.act{white-space:nowrap}
               <label class="field"><span>主 RSS 偏移（集）</span><input class="input" type="number" id="offset" placeholder="留空 = 不改" aria-label="全局主 RSS 偏移"></label>
               <label class="field"><span>副 RSS 偏移（集）</span><input class="input" type="number" id="standbyOffset" placeholder="留空 = 不改" aria-label="全局副 RSS 偏移"></label>
             </div>
-            <p class="note" style="margin-top:10px">写在全局会作用于所有订阅，只在确实要统一指定时才填。</p>
           </div>
         </details>
       </section>
 
       <section class="panel" id="p-sync" aria-labelledby="h-sync">
-        <div class="panel-head"><span class="idx">06</span><h2 id="h-sync">同步与后台</h2></div>
-        <p class="lede">托盘常驻时按间隔自动爬取；预览模式只生成计划，不写入任何东西。</p>
+        <div class="panel-head"><h2 id="h-sync">同步与后台</h2></div>
+        <p class="lede">托盘常驻时按间隔自动同步；预览模式只生成计划，不写入任何东西。</p>
         <div class="grid-2">
-          <label class="field"><span>后台自动爬取间隔（分钟，0 = 不自动）</span><input class="input" type="number" id="intervalMinutes" min="0" max="10080" placeholder="0" aria-label="后台自动爬取间隔分钟"></label>
+          <label class="field"><span>后台自动同步间隔（分钟，0 = 不自动）</span><input class="input" type="number" id="intervalMinutes" min="0" max="10080" placeholder="0" aria-label="后台自动同步间隔分钟"></label>
           <label class="field"><span>本地设置页监听地址</span><input class="input mono" id="listen" placeholder="127.0.0.1:51837" aria-label="本地设置页监听地址"></label>
         </div>
-        <div class="toolbar">
-          <label class="switch"><input type="checkbox" id="preview" aria-label="预览模式"><span>预览模式（生成计划但不写入）</span></label>
-          <label class="switch"><input type="checkbox" id="addMissing" aria-label="自动新增实例里没有的订阅"><span>自动新增实例里没有的订阅</span></label>
+        <div class="panel-foot">
+          <label class="switch"><input type="checkbox" id="preview" aria-label="预览模式"><span>预览模式</span></label>
+          <label class="switch"><input type="checkbox" id="addMissing" aria-label="自动新增实例里没有的订阅"><span>自动新增订阅</span></label>
           <span class="note">新增默认不启用，避免一上来就触发下载</span>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-sync" onclick="save(this)" aria-label="保存同步配置"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
       <section class="panel" id="p-discover" aria-labelledby="h-discover">
-        <div class="panel-head"><span class="idx">07</span><h2 id="h-discover">自动发现</h2></div>
-        <p class="lede">不用打开 ANI-RSS 的 WebUI 加订阅：先扫一遍现在有什么番剧在放，把实例里还没有的补进去。发现出来的条目不写季度与偏移，交给 ANI-RSS 按每个 RSS 的实际集数自己推断。</p>
+        <div class="panel-head">
+          <h2 id="h-discover">本季新番</h2>
+          <span class="spacer"></span>
+          <button class="btn" id="seasonRefresh" onclick="loadSeason(true)" aria-label="重新拉取本季新番"><svg class="i"><use href="#i-sync"/></svg><span>刷新列表</span></button>
+        </div>
+        <p class="lede">列表来自 Yuc 当季番剧表（人工整理，只含日本番剧与剧场版），Bangumi 只负责补 bgmId。</p>
         <div class="toolbar" style="margin-top:0">
-          <label class="switch"><input type="checkbox" id="discoverEnabled" aria-label="打开自动发现"><span>打开自动发现</span></label>
-          <label class="switch"><input type="checkbox" id="discoverEnable" aria-label="发现出来的新订阅直接启用"><span>新订阅直接启用</span></label>
-          <span class="note">不勾选 = 只建订阅不下载，确认后再打开</span>
+          <label class="switch"><input type="checkbox" id="discoverEnabled" aria-label="同步时自动添加本季新番"><span>同步时自动添加</span></label>
+          <label class="switch"><input type="checkbox" id="discoverEnable" aria-label="新加的订阅直接启用"><span>新订阅直接启用</span></label>
         </div>
-        <div class="toolbar" id="discoverSources" role="group" aria-label="发现来源"></div>
-        <div class="grid-3">
-          <label class="field"><span>Bangumi 用户名（扫追番时填）</span><input class="input" id="discoverBgmUser" placeholder="留空 = 不用" aria-label="Bangumi 用户名"></label>
-          <label class="field"><span>时间窗口（天，默认 180）</span><input class="input" type="number" id="discoverDays" min="1" max="3650" placeholder="180" aria-label="自动发现的时间窗口天数"></label>
-          <label class="field"><span>单次新增上限（默认 50）</span><input class="input" type="number" id="discoverLimit" min="1" max="500" placeholder="50" aria-label="自动发现单次新增上限"></label>
+        <div class="season-bar">
+          <label class="check-all"><input type="checkbox" id="seasonAll" aria-label="全选尚未添加的番剧"><span>全选</span></label>
+          <span class="note" id="seasonCount">正在读取…</span>
+          <span class="spacer"></span>
+          <button class="btn primary" id="seasonAdd" onclick="addSeasonPicked()" aria-label="添加勾选的番剧" disabled><svg class="i"><use href="#i-plus"/></svg><span>添加勾选</span></button>
         </div>
-        <label class="field" style="margin-top:var(--sp-3)"><span>标题黑名单：一行一条正则，命中就不发现</span><textarea class="input mono" id="discoverExclude" rows="3" placeholder="合集&#10;(?i)国漫|国创" aria-label="自动发现标题黑名单"></textarea></label>
-        <p class="note" style="margin-top:10px">想先看效果，到下面的「执行」点「预览计划」，或命令行跑 <code>AniSync discover</code>（只读，不碰实例）。</p>
+        <p class="season-warn" id="seasonWarn" role="status" hidden></p>
+        <div class="season-grid" id="seasonGrid" aria-busy="false" role="group" aria-label="本季新番"></div>
+        <details class="adv">
+          <summary><svg class="i caret"><use href="#i-caret"/></svg><span>黑名单与上限</span></summary>
+          <div class="adv-body">
+            <div class="grid-3">
+              <label class="field"><span>单次最多加几部</span><input class="input" type="number" id="discoverLimit" min="1" max="500" placeholder="50" aria-label="自动添加单次上限"></label>
+            </div>
+            <label class="field"><span>标题黑名单：一行一条正则，命中的不列出来也不自动加</span><textarea class="input mono" id="discoverExclude" rows="3" placeholder="合集&#10;(?i)国漫|国创" aria-label="本季新番标题黑名单"></textarea></label>
+          </div>
+        </details>
+        <div class="panel-foot">
+          <span class="note">「添加勾选」会直接落盘；开关和过滤条件改动后点保存。落盘只是改配置，写进实例要到「执行」跑同步。</span>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-discover" onclick="save(this)" aria-label="保存本季新番配置"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
+        </div>
       </section>
 
       <section class="panel" id="p-run" aria-labelledby="h-run">
-        <div class="panel-head"><span class="idx">08</span><h2 id="h-run">执行</h2></div>
+        <div class="panel-head"><h2 id="h-run">执行</h2></div>
         <p class="lede">预览计划是只读的，随时可以点。执行同步才会把差异写回实例。</p>
         <div class="toolbar" style="margin-top:0">
           <button class="btn" id="planBtn" onclick="plan()" aria-label="预览计划"><svg class="i"><use href="#i-eye"/></svg><span>预览计划</span></button>
@@ -428,20 +806,117 @@ td.act{white-space:nowrap}
   </div>
 </div>
 
+<dialog class="picker" id="bgmPicker" aria-labelledby="pickerTitle">
+  <div class="picker-top">
+    <h2 id="pickerTitle">添加番剧</h2>
+    <button class="btn icon ghost" type="button" id="pickerClose" aria-label="关闭"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="picker-search" id="pickerSearchBox">
+    <svg class="i"><use href="#i-search"/></svg>
+    <input id="pickerInput" type="search" autocomplete="off" spellcheck="false" placeholder="输入番剧名，回车搜索…" aria-label="搜索 Bangumi 番剧" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="pickerBody">
+    <span class="spinner" aria-hidden="true"></span>
+  </div>
+  <div class="picker-body" id="pickerBody" role="listbox" aria-label="搜索结果"></div>
+  <div class="picker-foot">
+    <span class="note" id="pickerHint">↑ ↓ 选择，回车确认</span>
+    <button class="btn ghost" type="button" id="pickerManual">跳过搜索，手动加一行</button>
+  </div>
+</dialog>
+
 <div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="false"></div>
 
 <script>
 let cfg = null;
 let sources = [];
-// 自动发现的来源。id 必须与 internal/config 里的 DiscoverSourceNames 一致，
-// 有 TestWebUIListsEveryDiscoverSource 盯着，改了一边不改另一边测试会红。
-const discoverSources = [
-  { id: 'animegarden', name: 'AnimeGarden 主题', note: '只列出真的有字幕组在做的番剧，最省事' },
-  { id: 'bangumi-calendar', name: 'Bangumi 放送表', note: '当季新番全集，会把没人做的番剧也带出来' },
-  { id: 'bangumi-collections', name: 'Bangumi 追番', note: '扫某个用户的「在看」，需要填用户名' },
-];
+/* ---------- 主题 ----------
+   三档：auto（跟随系统）/ light / dark，存在 localStorage。
+   head 里那段内联脚本已经按同一套规则设好 data-theme 了，这里只负责
+   把按钮接上、并在系统主题变化时刷新 auto 档。 */
+const THEME_KEY = 'anisync-theme';
+const THEME_MODES = ['auto', 'light', 'dark'];
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function currentThemeMode() {
+  return document.documentElement.getAttribute('data-theme-mode') || 'auto';
+}
+
+// auto 档每次都现读系统偏好，不缓存：系统主题变了（或者用户改了系统设置），
+// 下一次调用就该是对的，不需要额外维护同步状态。
+function applyTheme(mode) {
+  if (THEME_MODES.indexOf(mode) < 0) mode = 'auto';
+  const dark = mode === 'dark' || (mode !== 'light' && darkQuery.matches);
+  const root = document.documentElement;
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  root.setAttribute('data-theme-mode', mode);
+  // 手机上的状态栏 / 浏览器地址栏配色跟着走
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#0a0c0f' : '#f6f7f9');
+  // 页签图标也分浅深两版：深色页签上用浅色图标才看得清
+  const icon = $('favicon');
+  if (icon) icon.setAttribute('href', '/favicon.svg' + (dark ? '?theme=dark' : ''));
+  document.querySelectorAll('.theme-seg button').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.themeMode === mode));
+  });
+}
+
+function setThemeMode(mode) {
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) { /* 隐私模式下存不了，本次会话仍生效 */ }
+  applyTheme(mode);
+}
+
+function initTheme() {
+  applyTheme(currentThemeMode());
+  document.querySelectorAll('.theme-seg button').forEach((btn) => {
+    btn.addEventListener('click', () => setThemeMode(btn.dataset.themeMode));
+  });
+  // 系统主题变化时只有 auto 档跟着变；用户显式选过就尊重用户的选择
+  const onSystemChange = () => { if (currentThemeMode() === 'auto') applyTheme('auto'); };
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', onSystemChange);
+  else if (darkQuery.addListener) darkQuery.addListener(onSystemChange);
+}
+
+/* ---------- 侧栏收起 ----------
+   收起状态存在 localStorage，并由 head 里那段内联脚本在首帧前设好。
+   这里只负责切换 + 把 aria-expanded 同步出去（读屏用户看不到宽度变化）。 */
+const RAIL_KEY = 'anisync-rail';
+
+function railOn() { return document.documentElement.getAttribute('data-rail') === '1'; }
+
+function setRail(on) {
+  document.documentElement.setAttribute('data-rail', on ? '1' : '0');
+  try { localStorage.setItem(RAIL_KEY, on ? '1' : '0'); } catch (e) { /* 同上 */ }
+  const btn = $('railToggle');
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!on));
+    btn.setAttribute('aria-label', on ? '展开侧边栏' : '收起侧边栏');
+  }
+  // 宽度动画跑完再量指示条位置：中途量到的是旧宽度，指示条会停在错的地方。
+  // 过渡被 reduced-motion 关掉时不会发 transitionend，所以那种情况直接量。
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches && activeNav) moveIndicator(activeNav);
+}
+
+function initRail() {
+  setRail(railOn());
+  $('railToggle').addEventListener('click', () => setRail(!railOn()));
+  // 收起 / 展开的宽度过渡结束后重新对齐导航指示条
+  document.querySelector('.app').addEventListener('transitionend', (e) => {
+    if (e.target !== e.currentTarget || e.propertyName !== 'grid-template-columns') return;
+    if (activeNav) moveIndicator(activeNav);
+  });
+  // [ 是折叠面板的通用键位，顺手支持一下
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== '[' || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    setRail(!railOn());
+  });
+}
+
 let activeNav = null;
 let dirty = false;
+// 哪些区块有未保存的改动。逐块记录是为了让每个保存按钮自己亮起来，
+// 而不是八个按钮一起变——那等于没有提示。
+const dirtyPanels = new Set();
 let busy = false;
 
 const $ = (id) => document.getElementById(id);
@@ -451,7 +926,7 @@ function esc(s) {
 }
 function api(path, options) { return fetch(path, options).then((r) => r.json()); }
 
-/* ---------- 状态：顶栏文字 + 侧栏保存状态 + toast ---------- */
+/* ---------- 状态：顶栏文字 + 侧栏保存状态 + 区块保存按钮 + toast ---------- */
 function setStatus(text, kind) {
   const el = $('status');
   el.textContent = text || '';
@@ -461,13 +936,22 @@ function setSaveState(text, kind) {
   $('saveState').textContent = text;
   $('saveDot').className = 'dot ' + (kind || '');
 }
-function markDirty() {
+function syncSaveButtons() {
+  document.querySelectorAll('.js-save').forEach((btn) => {
+    btn.classList.toggle('is-dirty', dirtyPanels.has(btn.dataset.panel));
+  });
+}
+function markDirty(panelId) {
+  if (panelId) dirtyPanels.add(panelId);
+  syncSaveButtons();
   if (dirty) return;
   dirty = true;
   setSaveState('有未保存的改动', 'dirty');
 }
 function markClean(text) {
   dirty = false;
+  dirtyPanels.clear();
+  syncSaveButtons();
   setSaveState(text || '已保存', 'ok');
 }
 function toast(text, kind) {
@@ -484,7 +968,8 @@ function setBusy(on, which, label) {
   busy = on;
   const btn = which === 'sync' ? $('syncBtn') : $('planBtn');
   const other = which === 'sync' ? $('planBtn') : $('syncBtn');
-  [btn, other, $('saveBtn')].forEach((b) => { if (b) b.disabled = on; });
+  const all = [btn, other].concat([...document.querySelectorAll('.js-save')]);
+  all.forEach((b) => { if (b) b.disabled = on; });
   if (!btn) return;
   if (on) {
     btn.dataset.html = btn.innerHTML;
@@ -605,6 +1090,19 @@ async function load() {
   planEmpty();
   initNav();
   markClean('已加载配置');
+  // 不 await：放送表要走代理，慢的时候不该把整页卡在「加载中」。
+  // 页面先渲染出来，列表自己到。
+  loadSeason(false);
+}
+
+/* 站点列表只报 anibt / nyaa，但老配置的规则里可能写着 animegarden / mikan。
+   不给这种值补一个选项的话，<select> 会回落到第一项「不限站点」：显示是错的，
+   更要命的是用户碰一下这个下拉，onchange 就把 cfg 里的 site 写成空串 ——
+   一条「只在 mikan 生效」的规则会静默变成「所有站点生效」，直接改变主 RSS 的挑选结果。
+   所以这里必须把它原样渲染出来，并标明它来自配置文件。 */
+function legacySiteOption(site) {
+  if (!site || sources.some((s) => s.id === site)) return '';
+  return `<option value="${esc(site)}" selected>${esc(site)}（配置里有，界面不再提供）</option>`;
 }
 
 function render() {
@@ -628,29 +1126,10 @@ function render() {
   }
   $('nInstances').textContent = cfg.instances.length;
 
-  const picker = $('siteInstance');
-  picker.innerHTML = '<option value="">（第一个启用的实例）</option>' +
-    cfg.instances.map((it) => `<option value="${esc(it.name)}" ${cfg.sources.instance === it.name ? 'selected' : ''}>${esc(it.name || it.baseUrl)}</option>`).join('');
-
-  const order = $('sourceOrder');
-  order.innerHTML = '';
-  sources.forEach((src) => {
-    const at = (cfg.sources.order || []).indexOf(src.id);
-    const on = at >= 0;
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip';
-    chip.setAttribute('aria-pressed', String(on));
-    chip.setAttribute('aria-label', `${src.name}：${on ? '已启用，优先级 ' + (at + 1) : '未启用'}`);
-    chip.title = src.note + '（点击切换启用）';
-    chip.innerHTML = (on ? `<span class="ord">${at + 1}</span>` : '') + `<span>${esc(src.name)}</span>`;
-    chip.onclick = () => toggleSource(src.id);
-    order.appendChild(chip);
-  });
-  $('stopOnFirst').checked = !!cfg.sources.stopOnFirstMatch;
+  $('proxy').value = cfg.proxy || '';
   $('timeout').value = cfg.sources.timeoutSeconds || 25;
   $('cacheMinutes').value = cfg.sources.cacheMinutes ?? 720;
-  $('maxStandby').value = cfg.rules.maxStandby || 3;
+  $('maxStandby').value = cfg.rules.maxStandby || 1;
   $('addMissing').checked = !!cfg.sync.addMissing;
   $('preview').checked = !!cfg.sync.preview;
   $('intervalMinutes').value = cfg.sync.intervalMinutes || 0;
@@ -669,32 +1148,9 @@ function render() {
   const disc = cfg.discover || {};
   $('discoverEnabled').checked = !!disc.enabled;
   $('discoverEnable').checked = !!disc.enable;
-  $('discoverBgmUser').value = disc.bgmUser || '';
-  $('discoverDays').value = disc.days || 180;
   $('discoverLimit').value = disc.limit || 50;
   $('discoverExclude').value = (disc.exclude || []).join('\n');
   $('nDiscover').textContent = disc.enabled ? '开' : '关';
-  const discBox = $('discoverSources');
-  discBox.innerHTML = '';
-  const activeDisc = disc.sources || [];
-  discoverSources.forEach((src) => {
-    const on = activeDisc.indexOf(src.id) >= 0;
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip';
-    chip.setAttribute('aria-pressed', String(on));
-    chip.setAttribute('aria-label', `${src.name}：${on ? '已启用' : '未启用'}`);
-    chip.title = src.note + '（点击切换启用）';
-    chip.innerHTML = `<span>${esc(src.name)}</span>`;
-    chip.onclick = () => {
-      const list = cfg.discover.sources || (cfg.discover.sources = []);
-      const at = list.indexOf(src.id);
-      if (at >= 0) { list.splice(at, 1); } else { list.push(src.id); }
-      markDirty();
-      render();
-    };
-    discBox.appendChild(chip);
-  });
 
   const rules = $('rules');
   rules.innerHTML = '';
@@ -715,6 +1171,7 @@ function render() {
       <select class="input" aria-label="规则限定站点" onchange="cfg.rules.primary[${i}].site=this.value">
         <option value="">不限站点</option>
         ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+        ${legacySiteOption(rule.site)}
       </select>
       <button class="btn icon danger" onclick="delRule(${i})" aria-label="删除规则 ${esc(rule.name || i + 1)}"><svg class="i"><use href="#i-trash"/></svg></button>`;
     rules.appendChild(row);
@@ -749,8 +1206,10 @@ function render() {
     row.className = 'row target';
     row.setAttribute('role', 'group');
     row.setAttribute('aria-label', `番剧配置 ${i + 1}`);
+    // jpTitle 没有单独的输入框（Nyaa 搜索才用得到），挂成 tooltip 免得用户以为丢了
+    const jp = tg.jpTitle ? ` title="日文原名：${esc(tg.jpTitle)}"` : '';
     row.innerHTML = `
-      <input class="input" aria-label="番剧标题或 bgm 链接" value="${esc(tg.title || '')}" placeholder="冰之城墙 或 bgm 链接" oninput="cfg.targets[${i}].title=this.value">
+      <input class="input"${jp} aria-label="番剧标题或 bgm 链接" value="${esc(tg.title || '')}" placeholder="冰之城墙 或 bgm 链接" oninput="cfg.targets[${i}].title=this.value">
       <input class="input mono" aria-label="番剧 bgmId" value="${esc(tg.bgmId || '')}" placeholder="665390 或链接" oninput="cfg.targets[${i}].bgmId=this.value">
       <input class="input" type="number" aria-label="季度" value="${tg.season ?? ''}" placeholder="留空" oninput="cfg.targets[${i}].season=numOrUndef(this.value)">
       <input class="input" type="number" aria-label="主 RSS 集偏移" value="${tg.offset ?? ''}" placeholder="留空" oninput="cfg.targets[${i}].offset=numOrUndef(this.value)">
@@ -761,46 +1220,275 @@ function render() {
     targets.appendChild(row);
   });
   if (!cfg.targets.length) {
-    targets.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>还没有番剧级配置</p><p class="note">留空时季度与偏移完全不动，交给 ANI-RSS 按每个 RSS 的集数自己推断。</p></div>';
+    targets.innerHTML = '<div class="empty"><svg><use href="#i-search"/></svg><p>还没有番剧级配置</p><p class="note">点「添加番剧」搜 Bangumi，选中就会带上 bgmId。</p></div>';
   }
   $('nTargets').textContent = cfg.targets.length;
 }
 
 /* ---------- 增删 ---------- */
-function toggleSource(id) {
-  const list = cfg.sources.order || (cfg.sources.order = []);
-  const at = list.indexOf(id);
-  if (at >= 0) list.splice(at, 1); else list.push(id);
-  markDirty();
-  render();
-}
 function addInstance() {
   cfg.instances.push({ name: '', baseUrl: '', apiKey: '', enabled: true });
-  render(); revealRow('instances', cfg.instances.length - 1); markDirty();
+  render(); revealRow('instances', cfg.instances.length - 1); markDirty('p-instances');
 }
-function delInstance(i) { markDirty(); removeRow('instances', i, () => cfg.instances.splice(i, 1)); }
+function delInstance(i) { markDirty('p-instances'); removeRow('instances', i, () => cfg.instances.splice(i, 1)); }
 function addRule() {
   cfg.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', site: '' });
-  render(); revealRow('rules', cfg.rules.primary.length - 1); markDirty();
+  render(); revealRow('rules', cfg.rules.primary.length - 1); markDirty('p-rules');
 }
 function addTypeRules() {
   cfg.rules.primary.push(
     { name: '简日内嵌', match: '(?i)简日|简体|CHS', priority: 10, scope: 'main', site: '' },
     { name: '繁日内嵌', match: '(?i)繁日|繁體|CHT', priority: 20, scope: 'main', site: '' },
     { name: '简繁日内封', match: '(?i)简繁|内封', priority: 30, scope: 'main', site: '' });
-  render(); markDirty();
+  render(); markDirty('p-rules');
 }
-function delRule(i) { markDirty(); removeRow('rules', i, () => cfg.rules.primary.splice(i, 1)); }
+function delRule(i) { markDirty('p-rules'); removeRow('rules', i, () => cfg.rules.primary.splice(i, 1)); }
 function addDeny() {
   cfg.rules.deny.push({ match: '', why: '' });
-  render(); revealRow('deny', cfg.rules.deny.length - 1); markDirty();
+  render(); revealRow('deny', cfg.rules.deny.length - 1); markDirty('p-deny');
 }
-function delDeny(i) { markDirty(); removeRow('deny', i, () => cfg.rules.deny.splice(i, 1)); }
+function delDeny(i) { markDirty('p-deny'); removeRow('deny', i, () => cfg.rules.deny.splice(i, 1)); }
 function addTarget() {
   cfg.targets.push({ title: '', bgmId: '' });
-  render(); revealRow('targets', cfg.targets.length - 1); markDirty();
+  render(); revealRow('targets', cfg.targets.length - 1); markDirty('p-offsets');
 }
-function delTarget(i) { markDirty(); removeRow('targets', i, () => cfg.targets.splice(i, 1)); }
+function delTarget(i) { markDirty('p-offsets'); removeRow('targets', i, () => cfg.targets.splice(i, 1)); }
+
+/* ---------- 选番弹窗 ----------
+   加番剧的常规做法是提前把 bgm 链接贴进来，但手抄链接容易错，
+   所以给一个搜索框：搜到就点，bgmId / 中文名 / 日文名一起带进去。
+   封面必须走 /api/bgm/cover 中转 —— 图床在用户网络里通常直连不通。 */
+const picker = {
+  timer: 0,
+  seq: 0,
+  items: [],
+  active: -1,
+  lastQuery: '',
+  searching: false,
+};
+
+function pickerBody(html) {
+  $('pickerBody').innerHTML = html;
+  $('pickerBody').setAttribute('aria-busy', 'false');
+  const input = $('pickerInput');
+  input.removeAttribute('aria-activedescendant');
+  input.setAttribute('aria-expanded', 'false');
+}
+
+function pickerIdle() {
+  pickerBody('<div class="picker-msg">输入名字开始搜索。<br>选中条目会带上 bgmId，季度与偏移之后再单独填。</div>');
+}
+
+function pickerSkeleton() {
+  let out = '';
+  for (let i = 0; i < 4; i++) {
+    out += '<div class="res" aria-hidden="true" style="pointer-events:none">' +
+      '<span class="res-cover"><span class="sk" style="width:100%;height:100%;display:block"></span></span>' +
+      '<span class="res-main"><span class="sk" style="width:52%"></span><span class="sk" style="width:34%"></span><span class="sk" style="width:78%"></span></span></div>';
+  }
+  pickerBody(out);
+  $('pickerBody').setAttribute('aria-busy', 'true');
+}
+
+function coverURL(raw) {
+  return '/api/bgm/cover?u=' + encodeURIComponent(raw);
+}
+
+function pickerRender(items) {
+  picker.items = items;
+  picker.active = items.length ? 0 : -1;
+  if (!items.length) {
+    pickerBody('<div class="picker-msg">没搜到。换个名字试试，或者用日文原名搜。</div>');
+    return;
+  }
+  const have = new Set((cfg.targets || []).map((t) => String(t.bgmId || '')).filter(Boolean));
+  pickerBody(items.map((it, i) => {
+    const added = have.has(String(it.id));
+    const title = it.nameCn || it.name;
+    const jp = it.nameCn && it.name ? it.name : '';
+    const meta = [
+      it.airDate ? it.airDate : '',
+      it.epsCount ? it.epsCount + ' 集' : '',
+      it.score ? '★ ' + it.score.toFixed(1) : '',
+    ].filter(Boolean).map((s) => `<span>${esc(s)}</span>`).join('');
+    return `<button type="button" class="res enter" role="option" tabindex="-1" id="pick-${i}" aria-selected="${i === picker.active}"
+        data-i="${i}" data-active="${i === picker.active}" ${added ? 'aria-disabled="true"' : ''}
+        style="animation-delay:${Math.min(i * 30, 210)}ms">
+      <span class="res-cover">
+        <span class="ph"><svg><use href="#i-image"/></svg></span>
+        ${it.cover ? `<img src="${esc(coverURL(it.cover))}" alt="" loading="lazy" decoding="async">` : ''}
+      </span>
+      <span class="res-main">
+        <span class="res-title">${esc(title)}</span>
+        ${jp ? `<span class="res-jp">${esc(jp)}</span>` : ''}
+        ${meta ? `<span class="res-meta">${meta}</span>` : ''}
+        ${it.summary ? `<span class="res-sum">${esc(it.summary)}</span>` : ''}
+      </span>
+      <span class="res-add">${added ? '已添加' : '添加'}</span>
+    </button>`;
+  }).join(''));
+  $('pickerBody').setAttribute('aria-busy', 'false');
+  // 封面加载完再淡入，避免一张张白块往上顶
+  $('pickerBody').querySelectorAll('.res-cover img').forEach((img) => {
+    if (img.complete && img.naturalWidth) { img.classList.add('on'); return; }
+    img.addEventListener('load', () => img.classList.add('on'), { once: true });
+    img.addEventListener('error', () => img.remove(), { once: true });
+  });
+  setPickerActive(picker.active, false);
+}
+
+/* 焦点始终留在输入框上，用 aria-activedescendant 告诉读屏「现在选中的是哪一条」——
+   这是 combobox 模式的标准做法，不用真的把焦点挪进列表里。
+   所以列表项是 tabindex="-1"：Tab 跳过它们，↑↓ + 回车才是这条路。 */
+function setPickerActive(i, scroll) {
+  picker.active = i;
+  const nodes = [...$('pickerBody').querySelectorAll('.res[data-i]')];
+  let current = null;
+  nodes.forEach((n) => {
+    const on = Number(n.dataset.i) === i;
+    n.dataset.active = String(on);
+    n.setAttribute('aria-selected', String(on));
+    if (on) current = n;
+    if (on && scroll) n.scrollIntoView({ block: 'nearest' });
+  });
+  const input = $('pickerInput');
+  if (current) input.setAttribute('aria-activedescendant', current.id);
+  else input.removeAttribute('aria-activedescendant');
+  input.setAttribute('aria-expanded', String(nodes.length > 0));
+}
+
+function movePickerActive(delta) {
+  const usable = picker.items.map((_, i) => i);
+  if (!usable.length) return;
+  const cur = usable.indexOf(picker.active);
+  const next = cur < 0 ? 0 : Math.min(usable.length - 1, Math.max(0, cur + delta));
+  setPickerActive(usable[next], true);
+}
+
+async function pickerSearch(q) {
+  const seq = ++picker.seq;
+  picker.lastQuery = q;
+  if (!q) { picker.searching = false; $('pickerSearchBox').classList.remove('busy'); pickerIdle(); return; }
+  picker.searching = true;
+  $('pickerSearchBox').classList.add('busy');
+  if (!picker.items.length) pickerSkeleton();
+  try {
+    const res = await api('/api/bgm/search?q=' + encodeURIComponent(q));
+    if (seq !== picker.seq) return;   // 手快过响应时，旧结果直接丢
+    if (res.error) {
+      pickerBody(`<div class="picker-msg">搜索失败：${esc(res.error)}<br>如果一直失败，到「网络与代理」填一个代理。</div>`);
+      picker.items = [];
+      return;
+    }
+    pickerRender(res.items || []);
+  } catch (e) {
+    if (seq !== picker.seq) return;
+    picker.items = [];
+    pickerBody(`<div class="picker-msg">搜索失败：${esc(String(e))}</div>`);
+  } finally {
+    if (seq === picker.seq) {
+      picker.searching = false;
+      $('pickerSearchBox').classList.remove('busy');
+    }
+  }
+}
+
+function schedulePickerSearch() {
+  clearTimeout(picker.timer);
+  const q = $('pickerInput').value.trim();
+  if (q === picker.lastQuery && picker.items.length) return;
+  // 350ms：够长到不会每敲一个字打一次 Bangumi，够短到不觉得卡
+  picker.timer = setTimeout(() => pickerSearch(q), 350);
+}
+
+/* dialog 还开着的时候整页是 inert 的，这时 focus() 会被静默忽略，
+   焦点最后掉回「添加番剧」按钮上。所以渲染与聚焦都推迟到 close 之后。 */
+let pickerAfterClose = null;
+
+function pickPickerResult(i) {
+  const it = picker.items[i];
+  if (!it) return;
+  const id = String(it.id);
+  if ((cfg.targets || []).some((t) => String(t.bgmId || '') === id)) return;
+  cfg.targets.push({
+    title: it.nameCn || it.name,
+    jpTitle: it.nameCn && it.name !== it.nameCn ? it.name : '',
+    bgmId: id,
+  });
+  markDirty('p-offsets');
+  pickerAfterClose = () => {
+    render();
+    revealRow('targets', cfg.targets.length - 1);
+  };
+  closePicker();
+  toast('已添加 ' + (it.nameCn || it.name));
+}
+
+/* 出场动画放完再真正 close()：close() 会立刻把 dialog 从渲染树里摘掉，
+   那就只剩「啪」地消失。时长由 CSS 决定，JS 只等 animationend，不写死毫秒数。 */
+function closePicker() {
+  const d = $('bgmPicker');
+  if (!d.open || d.classList.contains('closing')) return;
+  d.classList.add('closing');
+}
+
+function openPicker() {
+  const d = $('bgmPicker');
+  picker.items = [];
+  picker.active = -1;
+  picker.lastQuery = '';
+  pickerAfterClose = null;
+  $('pickerInput').value = '';
+  pickerIdle();
+  if (!d.open) d.showModal();
+  // showModal 会把焦点给第一个可聚焦元素（也就是关闭按钮），这里抢回输入框
+  requestAnimationFrame(() => $('pickerInput').focus());
+}
+
+function initPicker() {
+  const d = $('bgmPicker');
+  d.addEventListener('animationend', (e) => {
+    if (e.animationName !== 'picker-out') return;
+    d.classList.remove('closing');
+    d.close();
+  });
+  d.addEventListener('close', () => {
+    const after = pickerAfterClose;
+    pickerAfterClose = null;
+    if (after) after();
+  });
+  $('pickerClose').addEventListener('click', closePicker);
+  $('pickerManual').addEventListener('click', () => {
+    pickerAfterClose = () => addTarget();
+    closePicker();
+  });
+  $('pickerInput').addEventListener('input', schedulePickerSearch);
+  $('pickerInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (picker.items.length && picker.active >= 0) { pickPickerResult(picker.active); return; }
+      clearTimeout(picker.timer);
+      pickerSearch($('pickerInput').value.trim());
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); movePickerActive(1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); movePickerActive(-1); }
+  });
+  $('pickerBody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.res[data-i]');
+    if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
+    pickPickerResult(Number(btn.dataset.i));
+  });
+  $('pickerBody').addEventListener('mousemove', (e) => {
+    const btn = e.target.closest('.res[data-i]');
+    if (!btn) return;
+    const i = Number(btn.dataset.i);
+    if (i !== picker.active) setPickerActive(i, false);
+  });
+  // Esc 默认会直接 close()，那样就没有出场动画了；拦下来自己收
+  d.addEventListener('cancel', (e) => { e.preventDefault(); closePicker(); });
+  d.addEventListener('click', (e) => { if (e.target === d) closePicker(); });
+}
 
 /* 空输入 = 配置里不写这一项 = AniSync 不碰订阅里已有的值。
    返回 undefined，JSON.stringify 会直接丢掉这个键。 */
@@ -821,11 +1509,11 @@ function isEmptyTarget(tg) {
 }
 
 function collect() {
-  cfg.sources.instance = $('siteInstance').value;
-  cfg.sources.stopOnFirstMatch = $('stopOnFirst').checked;
+  // sources.order / sources.instance / stopOnFirstMatch 刻意不在这里写：
+  // 站点数据一律问实例要，设置页不再暴露爬取顺序，这些键保持文件里的原样。
   cfg.sources.timeoutSeconds = Number($('timeout').value) || 25;
   cfg.sources.cacheMinutes = Number($('cacheMinutes').value) || 0;
-  cfg.rules.maxStandby = Number($('maxStandby').value) || 3;
+  cfg.rules.maxStandby = Number($('maxStandby').value) || 1;
   cfg.sync.addMissing = $('addMissing').checked;
   cfg.sync.preview = $('preview').checked;
   cfg.sync.intervalMinutes = Number($('intervalMinutes').value) || 0;
@@ -833,24 +1521,173 @@ function collect() {
   cfg.sync.offset = optInt('offset');
   cfg.sync.standbyOffset = optInt('standbyOffset');
   cfg.targets = (cfg.targets || []).filter((tg) => !isEmptyTarget(tg));
+  cfg.proxy = $('proxy').value.trim();
   cfg.discover = cfg.discover || {};
   cfg.discover.enabled = $('discoverEnabled').checked;
   cfg.discover.enable = $('discoverEnable').checked;
-  cfg.discover.bgmUser = $('discoverBgmUser').value.trim();
-  cfg.discover.days = Number($('discoverDays').value) || 180;
   cfg.discover.limit = Number($('discoverLimit').value) || 50;
   cfg.discover.exclude = $('discoverExclude').value.split('\n').map((line) => line.trim()).filter(Boolean);
-  // 来源靠上面的标签切换直接改 cfg，这里只在一条都没选时兜底，
-  // 避免保存出一份「打开了自动发现但没有任何来源」的配置。
-  if (!(cfg.discover.sources || []).length) { cfg.discover.sources = ['animegarden']; }
+  // sources / japanOnly / bgmUser / days 同理不写：列表来源改成配置里的事，
+  // 但配置文件里可能还留着这些键，保存时原样带回去，不要抹掉。
   cfg.listen = $('listen').value || '127.0.0.1:51837';
   return cfg;
 }
 
+/* ---------- 本季新番 ----------
+   列表整份来自 /api/season（服务端读 Bangumi 放送表）。前端只做三件事：
+   渲染、勾选、把勾中的写进 cfg.targets。这里没有一步需要「按名字猜是哪部番」，
+   因为服务端返回的每条都带 bgmId。 */
+let seasonItems = [];
+let seasonError = '';
+// 服务端报回来的统计：过滤掉多少、Yuc 上有但 Bangumi 认不出的有多少、
+// 实例里一共多少条订阅、实例读不到时的原因。
+let seasonMeta = { filtered: 0, unmatched: 0, subscribed: null, instanceError: '' };
+const WEEKDAYS = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+// 12345 -> 1.2万。在看人数动辄上万，原样铺在卡片上会顶掉标题。
+function fmtNum(n) {
+  return n >= 10000 ? (n / 10000).toFixed(1).replace(/\.0$/, '') + '万' : String(n);
+}
+
+async function loadSeason(force) {
+  const grid = $('seasonGrid');
+  grid.setAttribute('aria-busy', 'true');
+  $('seasonCount').textContent = '正在读取…';
+  $('seasonAdd').disabled = true;
+  try {
+    // 加时间戳绕开浏览器缓存；服务端那边另有自己的缓存时长。
+    const res = await api('/api/season' + (force ? '?t=' + Date.now() : ''));
+    if (res.error) {
+      seasonItems = [];
+      seasonError = res.error;
+      seasonMeta = { filtered: 0, unmatched: 0, subscribed: null, instanceError: '' };
+    } else {
+      seasonItems = res.items || [];
+      seasonError = '';
+      seasonMeta = {
+        filtered: res.filtered || 0,
+        unmatched: res.unmatched || 0,
+        subscribed: typeof res.subscribed === 'number' ? res.subscribed : null,
+        instanceError: res.instanceError || '',
+      };
+    }
+  } catch (err) {
+    seasonItems = [];
+    seasonError = '读取失败：' + String(err);
+  } finally {
+    grid.setAttribute('aria-busy', 'false');
+  }
+  renderSeason();
+}
+
+function renderSeason() {
+  const grid = $('seasonGrid');
+  const warn = $('seasonWarn');
+  // 读实例失败时必须说出来：否则用户看到「一部都没加」会以为判定逻辑坏了，
+  // 而实际上只是实例连不上。
+  if (seasonMeta.instanceError) {
+    warn.hidden = false;
+    warn.textContent = '读不到实例的订阅列表，「已添加」可能不准：' + seasonMeta.instanceError;
+  } else {
+    warn.hidden = true;
+    warn.textContent = '';
+  }
+
+  if (!seasonItems.length) {
+    grid.innerHTML = `<div class="season-empty">${esc(seasonError || '放送表暂时是空的，点「刷新列表」再试')}</div>`;
+    $('seasonCount').textContent = '0 部';
+    $('seasonAdd').disabled = true;
+    return;
+  }
+  grid.innerHTML = seasonItems.map((it, i) => {
+    const meta = [
+      WEEKDAYS[it.weekday] || '',
+      it.doing ? '在看 ' + fmtNum(it.doing) : '',
+      it.score ? it.score.toFixed(1) + ' 分' : '',
+    ].filter(Boolean).join(' · ');
+    const cover = it.cover
+      ? `<img src="/api/bgm/cover?u=${encodeURIComponent(it.cover)}" alt="" loading="lazy" onload="this.classList.add('on')">`
+      : '<svg class="i"><use href="#i-image"/></svg>';
+    return `<label class="season-card${it.added ? ' is-added' : ''}" style="animation-delay:${Math.min(i * 18, 240)}ms">
+      <input class="season-pick" type="checkbox" data-i="${i}"${it.added ? ' disabled' : ''} onchange="syncSeasonBar()" aria-label="选择 ${esc(it.title)}">
+      <span class="season-cover">${cover}</span>
+      <span class="season-body">
+        <span class="season-title" title="${esc(it.title)}">${esc(it.title)}</span>
+        ${it.jpTitle && it.jpTitle !== it.title ? `<span class="season-jp" title="${esc(it.jpTitle)}">${esc(it.jpTitle)}</span>` : ''}
+        ${meta ? `<span class="season-meta">${esc(meta)}</span>` : ''}
+      </span>
+      ${it.added ? '<span class="season-tag">已添加</span>' : ''}
+    </label>`;
+  }).join('');
+  syncSeasonBar();
+}
+
+// 勾选状态一变就重算：全选框的半选态、计数、按钮可点性都跟着走。
+function syncSeasonBar() {
+  const picks = [...document.querySelectorAll('.season-pick:not(:disabled)')];
+  const checked = picks.filter((c) => c.checked);
+  const all = $('seasonAll');
+  all.disabled = !picks.length;
+  all.checked = picks.length > 0 && checked.length === picks.length;
+  all.indeterminate = checked.length > 0 && checked.length < picks.length;
+
+  const pending = seasonItems.filter((it) => !it.added).length;
+  const parts = [`本季 ${seasonItems.length} 部`];
+  if (seasonMeta.subscribed != null) parts.push(`实例已有 ${seasonMeta.subscribed} 条订阅`);
+  parts.push(pending ? `待添加 ${pending} 部` : '都已添加');
+  // 报出被砍掉的条数，否则用户只会看到列表比来源短，不知道是被谁砍的
+  if (seasonMeta.filtered) parts.push(`已滤掉 ${seasonMeta.filtered} 部非日漫`);
+  if (seasonMeta.unmatched) parts.push(`${seasonMeta.unmatched} 部在 Bangumi 上没找到条目`);
+  $('seasonCount').textContent = parts.join(' · ');
+
+  const btn = $('seasonAdd');
+  btn.disabled = !checked.length;
+  btn.querySelector('span').textContent = checked.length ? `添加勾选（${checked.length}）` : '添加勾选';
+}
+
+function toggleAllSeason(on) {
+  document.querySelectorAll('.season-pick:not(:disabled)').forEach((c) => { c.checked = on; });
+  syncSeasonBar();
+}
+
+// 添加勾选：写进 targets 后直接落盘。
+//
+// 为什么不等用户再点一次保存：这一步就是「一键加番」本身，中间再插一道确认
+// 就退回到「打开页面找番」的老路上去了。落盘只改配置，不碰实例——
+// 真正写进 ANI-RSS 仍然要用户自己到「执行」跑一次同步，那一步才是不可逆的。
+async function addSeasonPicked() {
+  const picked = [...document.querySelectorAll('.season-pick:checked')]
+    .map((c) => seasonItems[Number(c.dataset.i)])
+    .filter(Boolean);
+  if (!picked.length) return;
+
+  const enable = $('discoverEnable').checked;
+  cfg.targets = cfg.targets || [];
+  const seen = new Set(cfg.targets.map((t) => String(t.bgmId || '').trim()).filter(Boolean));
+  let added = 0;
+  picked.forEach((it) => {
+    if (seen.has(it.bgmId)) return;
+    seen.add(it.bgmId);
+    const target = { title: it.title, bgmId: it.bgmId, enable };
+    if (it.jpTitle) target.jpTitle = it.jpTitle;
+    cfg.targets.push(target);
+    added++;
+  });
+  render();
+  markDirty('p-offsets');
+
+  const panel = $('seasonAdd').closest('.panel');
+  const ok = await save(panel && panel.querySelector('.js-save'));
+  if (!ok) return;
+  picked.forEach((it) => { it.added = true; });
+  renderSeason();
+  toast(added ? `已加入 ${added} 部并保存` : '这些都已经加过了');
+}
+
 /* ---------- 动作 ---------- */
-async function save() {
-  const btn = $('saveBtn');
-  btn.disabled = true;
+async function save(btn) {
+  const buttons = [...document.querySelectorAll('.js-save')];
+  buttons.forEach((b) => { b.disabled = true; });
   setStatus('保存中');
   try {
     const res = await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect()) });
@@ -858,10 +1695,14 @@ async function save() {
     render();
     markClean('已保存');
     setStatus('');
+    if (btn) {
+      btn.classList.add('done');
+      onAnimationEnd(btn, 'save-flash', () => btn.classList.remove('done'));
+    }
     toast('配置已保存');
     return true;
   } finally {
-    btn.disabled = busy;
+    buttons.forEach((b) => { b.disabled = busy; });
   }
 }
 
@@ -961,8 +1802,27 @@ function renderPlan(plan) {
 }
 
 /* ---------- 启动 ---------- */
-document.addEventListener('input', (e) => { if (e.target.closest('.content')) markDirty(); });
-document.addEventListener('change', (e) => { if (e.target.closest('.content')) markDirty(); });
+// 本季新番的勾选框不是配置项：勾它不改配置文件，点「添加勾选」才改。
+// 所以这里要排掉，否则勾一张卡就把「保存」点亮，用户点下去却什么都没保存。
+function isSeasonPick(el) { return !!(el.closest && el.closest('.season-grid')); }
+
+document.addEventListener('input', (e) => {
+  if (isSeasonPick(e.target)) return;
+  const panel = e.target.closest('.content .panel');
+  if (panel) markDirty(panel.id);
+});
+document.addEventListener('change', (e) => {
+  if (isSeasonPick(e.target)) return;
+  const panel = e.target.closest('.content .panel');
+  if (panel) markDirty(panel.id);
+});
+/* 主题与侧栏先接上：它们不依赖配置能不能加载成功，配置挂了也得能切主题、能收侧栏。 */
+initTheme();
+initRail();
+initPicker();
+$('seasonAll').addEventListener('change', (e) => toggleAllSeason(e.target.checked));
+// 侧栏那个「开/关」角标跟着开关走，不然改了开关侧栏还是旧状态
+$('discoverEnabled').addEventListener('change', (e) => { $('nDiscover').textContent = e.target.checked ? '开' : '关'; });
 load().catch((e) => { setStatus(String(e), 'err'); setSaveState('加载失败', 'err'); });
 </script>
 </body>

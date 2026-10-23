@@ -95,6 +95,17 @@ type RuleFileInfo struct {
 	Count int    `json:"count"`
 }
 
+// DefaultSourceOrder 是默认的站点优先级。
+//
+// 只留两家，各有各的不可替代性：
+//
+//	anibt  走实例的 aniBTGroup 接口，字幕组维度、API 齐全、有热度权重
+//	nyaa   由 AniSync 自己按关键字搜索，资源覆盖最广，补 anibt 的盲区
+//
+// animegarden / mikan 仍然能写进配置并且照常工作（老配置不会失效），
+// 只是不再进默认值：三家都走实例的同类接口，多出来的两家换不回额外的覆盖面。
+var DefaultSourceOrder = []string{"anibt", "nyaa"}
+
 // Sources 描述站点数据来源。
 type Sources struct {
 	// Instance 指定借用哪个实例的站点数据（mikanGroup / aniBTGroup / animeGardenGroup）；
@@ -163,11 +174,12 @@ type Sync struct {
 // Discover 描述「自动发现该订阅什么」：AniSync 不只在实例已有的订阅上打点，
 // 还能自己去扫一遍「现在有什么番剧在放」，把实例里还没有的补进去。
 //
-// 三个来源全部免鉴权，开箱即用：
+// 默认来源是 yuc（Yuc 的当季番剧表）：
 //
-//	animegarden         AnimeGarden 的主题列表（只列出真的有资源的番剧，最省事）
-//	bangumi-calendar    Bangumi 每日放送表（当季新番全集）
-//	bangumi-collections Bangumi 某个用户的收藏（追番列表，需要 bgmUser）
+//	yuc                 Yuc 季度页给「这一季有哪些番」，Bangumi 只负责补 bgmId
+//	bangumi-calendar    Bangumi 每日放送表；自带 bgmId，但混着国漫美漫 OVA，要过滤
+//	animegarden         只列出真的有字幕组在做的番剧
+//	bangumi-collections 扫某个 Bangumi 用户的「在看」，需要 bgmUser
 //
 // 发现出来的条目会被当成自动生成的 targets：季度与偏移留空，交给 ANI-RSS 自己推断。
 type Discover struct {
@@ -186,22 +198,36 @@ type Discover struct {
 	Enable *bool `yaml:"enable,omitempty" json:"enable,omitempty"`
 	// Exclude 是标题正则黑名单，命中就不发现。用来挡掉国漫、日剧、合集这些不想要的。
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	// JapanOnly 只列日本 TV 番剧与剧场版，默认开。
+	//
+	// 放送表按星期列出所有在放的东西，本身不带地区与平台，里面混着国漫、美漫、
+	// OVA、网络短片和幼儿节目。打开时按 Bangumi 条目的地区标签（日本）与
+	// 平台（TV / 剧场版）过滤掉那些。
+	//
+	// 用指针是为了区分「没配」与「配成 false」：没配按 true 处理。
+	// 关掉就回到「放送表给什么就列什么」。
+	JapanOnly *bool `yaml:"japanOnly,omitempty" json:"japanOnly,omitempty"`
 }
 
 // 自动发现来源标识。
 const (
+	DiscoverYuc            = "yuc"
 	DiscoverAnimeGarden    = "animegarden"
 	DiscoverBgmCalendar    = "bangumi-calendar"
 	DiscoverBgmCollections = "bangumi-collections"
 )
 
 // DiscoverSourceNames 是全部合法的发现来源。
-var DiscoverSourceNames = []string{DiscoverAnimeGarden, DiscoverBgmCalendar, DiscoverBgmCollections}
+var DiscoverSourceNames = []string{DiscoverYuc, DiscoverAnimeGarden, DiscoverBgmCalendar, DiscoverBgmCollections}
 
-// DefaultDiscoverSources 是自动发现的默认来源。
-// 只用 AnimeGarden：它列出来的主题都是「真的有字幕组在做」的番剧，
-// 不会像放送表那样把一堆没人做的番剧也灌进来。
-var DefaultDiscoverSources = []string{DiscoverAnimeGarden}
+// DefaultDiscoverSources 是自动发现的默认来源：Yuc 的当季番剧表。
+//
+// 为什么是 Yuc 而不是 Bangumi 放送表：放送表把国漫、美漫、OVA、网络短片全混在一起，
+// 而且不带地区与平台，要筛干净只能逐条查详情（110 次请求）。Yuc 的季度页本身就是
+// 一份人工整理过的日本番剧表，拿它定「这一季有什么」，再让 Bangumi 只负责补 bgmId。
+//
+// 匹配走日文原名：中文译名是各家自己的写法，实测命中率 46%，日文原名 88%。
+var DefaultDiscoverSources = []string{DiscoverYuc}
 
 // DefaultDiscoverDays 是自动发现的时间窗口。
 //
@@ -214,6 +240,9 @@ const DefaultDiscoverLimit = 50
 
 // DiscoverEnabled 返回发现出来的新订阅是否启用。
 func (d Discover) DiscoverEnabled() bool { return d.Enable != nil && *d.Enable }
+
+// JapanOnlyEnabled 返回是否只列日本 TV 番剧与剧场版；没配时按开处理。
+func (d Discover) JapanOnlyEnabled() bool { return d.JapanOnly == nil || *d.JapanOnly }
 
 // SourceList 返回规整后的发现来源。
 func (d Discover) SourceList() []string {
@@ -251,8 +280,15 @@ func (d Discover) MaxNew() int {
 
 // Config 是 AniSync 的完整配置。
 type Config struct {
-	Listen    string     `yaml:"listen" json:"listen"`
-	Proxy     string     `yaml:"proxy,omitempty" json:"proxy,omitempty"`
+	Listen string `yaml:"listen" json:"listen"`
+	// Proxy 是出站请求用的代理地址，例如 http://127.0.0.1:7890；
+	// 留空时用环境变量 ANISYNC_PROXY，其次 HTTPS_PROXY / HTTP_PROXY。
+	//
+	// 它作用于所有出站请求：站点数据、Bangumi 搜索、封面图片。
+	//
+	// 刻意不加 omitempty：空值也要写出来，否则保存一次这个键就没了，
+	// 挂在它上面的注释（「留空 = 用环境变量」）也跟着一起消失。
+	Proxy     string     `yaml:"proxy" json:"proxy"`
 	Sources   Sources    `yaml:"sources" json:"sources"`
 	Rules     Rules      `yaml:"rules" json:"rules"`
 	Instances []Instance `yaml:"instances" json:"instances"`
@@ -299,7 +335,7 @@ func Default() *Config {
 	return &Config{
 		Listen: DefaultListen,
 		Sources: Sources{
-			Order:          []string{"anibt", "animegarden", "mikan", "nyaa"},
+			Order:          append([]string(nil), DefaultSourceOrder...),
 			TimeoutSeconds: 25,
 			CacheMinutes:   720,
 		},

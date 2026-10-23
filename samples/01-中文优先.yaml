@@ -16,15 +16,18 @@
 # 本地设置页监听地址；托盘模式下点「打开设置」会开这个地址。
 listen: 127.0.0.1:51837
 
-# 访问站点用的代理。留空则用环境变量 HTTPS_PROXY / ANISYNC_PROXY。
-# 从国内直连 nyaa.si 和 api.bgm.tv 通常不通，配一个本地代理最省事。
+# 访问站点用的代理。留空则用环境变量 ANISYNC_PROXY，其次 HTTPS_PROXY / HTTP_PROXY。
+# 从国内直连 nyaa.si、api.bgm.tv 与封面图床 lain.bgm.tv 通常不通，配一个本地代理最省事。
+# 设置页的「网络与代理」里也能改这一项。
 # proxy: http://127.0.0.1:7890
 
 sources:
   # 站点数据借用哪个实例的接口；留空 = 第一个启用的实例。
   instance: ""
-  # 爬取优先级。anibt / animegarden / mikan 走实例接口，nyaa 是关键字搜索。
-  order: [anibt, animegarden, mikan, nyaa]
+  # 爬取优先级。anibt 走实例接口（字幕组维度、API 齐全），nyaa 由 AniSync 自己按关键字搜。
+  # 两家覆盖面互补，默认就这两家。animegarden / mikan 也能写进来，但和 anibt 是同一类
+  # 实例接口，换不回额外覆盖面。
+  order: [anibt, nyaa]
   stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 会变少
   timeoutSeconds: 25
   cacheMinutes: 720         # 站点数据缓存 12 小时，后台自动跑时不必反复翻站点
@@ -108,6 +111,7 @@ discover:
   # 默认关。想用就设成 true，或临时加 --discover 跑一次看看（AniSync plan --discover）。
   # 详见 04 号样例。
   enabled: false
-  sources: [animegarden]
-  days: 180
+  # 只用 Yuc 的当季番剧表：它本身就是人工整理的日本番剧表，
+  # Bangumi 只负责补 bgmId（匹配走日文原名，中文译名各家写法不一样，对不上）。
+  sources: [yuc]
   limit: 50

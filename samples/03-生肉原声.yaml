@@ -12,7 +12,7 @@ listen: 127.0.0.1:51837
 
 sources:
   instance: ""
-  order: [anibt, animegarden, mikan, nyaa]
+  order: [anibt, nyaa]
   stopOnFirstMatch: false
   timeoutSeconds: 25
   cacheMinutes: 720
@@ -63,6 +63,6 @@ sync:
 
 discover:
   enabled: false
-  sources: [animegarden]
+  sources: [yuc]
   days: 180
   limit: 50

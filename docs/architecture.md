@@ -8,8 +8,8 @@ internal/workdir     运行期文件位置（程序同目录）
 internal/config      配置读写：YAML、环境变量展开、校验与默认值
 internal/cache       站点数据磁盘缓存（TTL + 原子落盘）
 internal/assapi      ANI-RSS API 客户端
-internal/discover    自动发现：扫 AnimeGarden / Bangumi，产出待新增的番剧
-internal/source      站点适配层（anibt / animegarden / mikan / nyaa）
+internal/discover    本季新番：读 Yuc 当季番剧表，用 Bangumi 补 bgmId，产出待新增的番剧
+internal/source      站点适配层（anibt / nyaa 默认；animegarden / mikan 兼容保留）
 internal/rules       规则编译、打分、去重
 internal/planner     计划生成与执行
 internal/webui       本地设置页（内嵌资源，无前端构建步骤）
@@ -45,11 +45,28 @@ setAni（update） / rssToAni + addAni（add）
 
 ## 关键设计
 
-**自动发现复用新增链路，不另造一套写入逻辑。** `discover` 只负责「现在有什么番剧在放」，
+**发现链路不猜番剧，靠 `bgmId` 走到底。** `discover` 只负责「当季有什么番剧在放」，
 产出的 `config.Target` 和用户手写的 `targets` 走同一条路：同样的站点爬取、同样的规则排序、
-同样的 `rssToAni` → `addAni`。这样自动发现不需要理解 ANI-RSS 的字段规则，也不会绕过任何校验。
+同样的 `rssToAni` → `addAni`。这样发现不需要理解 ANI-RSS 的字段规则，也不会绕过任何校验。
 去重按 `bgmId` 精确比对（只比标题会因为中/日文名不同而漏），手写的 `targets` 优先于发现结果，
 避免用户为某部番剧规定的季度与偏移被自动生成的空值顶掉。
+
+**番剧清单来自 Yuc，`bgmId` 来自 Bangumi。** 默认来源是 `yuc`：Yuc（yuc.wiki）的季度页
+本身就是一份人工整理过的日本番剧表，`OpenAniBT/Yuc` 每 6 小时把它的公开页面抓成结构化 JSON。
+拿它定「这一季有哪些番」，再让 Bangumi 只负责补 `bgmId` —— 两边各干各擅长的事。
+
+不用 `bangumi-calendar` 当默认，是因为放送表把国漫、美漫、OVA、网络短片全混在一起，
+而且**不带地区与平台**，要筛干净只能逐条查 `/v0/subjects/{id}`（一季 110 次请求）。
+它仍保留可用，配合 `discover.japanOnly`（默认开）按 `platform ∈ {TV, 剧场版}` 且
+`meta_tags` 含「日本」过滤。
+
+**匹配走日文原名。** Yuc 的 `titles.original.text` 对 Bangumi 的 `name`，比对前先归一化：
+全角折半角、罗马数字折 ASCII（`Ⅱ` → `II`，与 NFKC 行为对齐）、去标点、季度写法统一
+（`Season2` / `第2クール` / `Part 2` / `第2部分` 都折成 `第2期`）。实测日文原名命中 88%，
+中文译名只有 46% —— 中文译名是各家自己的写法。剩下 12% 用 Bangumi 检索兜底，
+且要在**全部**结果里挑最像的而不是取第一条：续作搜索经常同时返回「X 第2期」和「X」，
+取第一个会把续作认成第一季（实测踩过：「转生就是剑 第二季」已经订了，却又冒出一条
+「转生就是剑」）。认不出来的计入 `unmatched` 报到界面上，不静默吞掉。
 
 **setAni 是整对象覆盖语义。** ANI-RSS 服务端用 `BeanUtil.copyProperties` 拷贝，null 也会覆盖过去。因此 `applyDesired` 从不构造局部对象，而是把 `listAni` 拿到的原始 map 改完再整份回传，避免把未修改的字段洗掉。
 
@@ -59,7 +76,14 @@ setAni（update） / rssToAni + addAni（add）
 
 **`${ENV}` 只在发请求时展开。** 展开发生在 `Instance.Resolve()` 与 `Config.ResolvedProxy()` 里，配置结构里始终保留占位符原文，`Validate` 也按展开后的值判断。Web 设置页是「读配置 → 改 → 存回」的闭环：如果在 `Load` 时就把密钥展开进内存，用户点一次保存就会把明文写进 `config.yaml`。同理由 `ResolvedProxy()` 兜底 `ANISYNC_PROXY`，避免环境变量被固化进配置文件。
 
-**站点数据来自实例。** AniBT / AnimeGarden / Mikan 不自己爬网页，而是调用实例的 `aniBTGroup` / `animeGardenGroup` / `mikanGroup` 接口。实例怎么认这些站点，AniSync 就怎么认，拿到的是实例自己拼好的 RSS 地址，站点改版不会导致各写一份解析。`sources.instance` 指定借用哪个实例，留空取第一个启用的实例。
+**站点数据来自实例。** AniBT 不自己爬网页，而是调用实例的 `aniBTGroup` 接口。实例怎么认这个站点，
+AniSync 就怎么认，拿到的是实例自己拼好的 RSS 地址，站点改版不会导致各写一份解析。
+`sources.instance` 指定借用哪个实例，留空取第一个启用的实例。
+
+**默认只跑 AniBT + Nyaa。** 两家覆盖面互补：AniBT 字幕组维度、API 齐全、带热度权重；
+Nyaa 资源最广，补 AniBT 的盲区。`animegarden` / `mikan` 走的是和 AniBT 同一类实例接口，
+多出来的两家换不回额外覆盖面，因此不再进 `DefaultSourceOrder`——但**仍然可配且照常工作**，
+老配置不会因为这次调整失效。`SiteType` 的映射表也原样保留，避免下游按 `site` 字段分支的地方踩空。
 
 **Mikan 需要番剧页地址而非 RSS 地址。** `mikanGroup` 的入参是 `https://mikanani.me/Home/Bangumi/<id>`。优先从订阅现有 RSS 的 `bangumiId` 推导；推不出来时用实例的 `mikan` 搜索接口按标题反查，并用 `bgmId` 精确匹配结果，而不是按标题猜。
 

@@ -12,24 +12,26 @@ AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必�
 
 它做两件事：
 
-1. **自动发现该订阅什么** —— 扫 AnimeGarden / Bangumi，看现在有什么番剧在放，把实例里还没有的补进去
+1. **自动发现该订阅什么** —— 读 Yuc 的当季番剧表，看这一季有什么日本番剧在放，把实例里还没有的补进去
 2. **自动挑主副 RSS** —— 按配置的站点优先级获取字幕组与放流组信息，依据正则与优先级规则选出主 RSS 与副 RSS，写回各实例
 
 适用于同时维护多个 ANI-RSS 实例、对字幕组与字幕类型有固定偏好、又不想每季手动加几十个订阅的场景。
 
 ## 特性
 
-- **自动发现**：不用打开 ASS 加订阅。扫 AnimeGarden 主题列表 / Bangumi 放送表 / Bangumi 用户追番，实例里没有的自动补上，默认不启用，确认后再放手
+- **本季新番一键入库**：不用打开 ASS 加订阅。设置页列出当季在放送的番剧（带封面、原名、在看人数），勾选后一键加进 targets；也可以打开「同步时自动添加」，让后台自己扫、自己补
+- **列表干净**：番剧清单来自 [Yuc](https://yuc.wiki/)（人工整理的日本番剧表），不混国漫、美漫、OVA、网络短片；Bangumi 只负责补 `bgmId`
 - **多实例**：一次同步，全部实例同时生效
 - **规则驱动**：正则匹配 + 优先级，可排字幕组，也可排简日内嵌 / 繁日内嵌 / 简繁日内封等字幕类型
 - **主副分工**：主 RSS 用字幕组规则、副 RSS 用放流组规则，由规则的 `scope` 决定
 - **副 RSS 点名制**：只有被 `scope: standby` 规则点过名的组才进副 RSS，没点名的一律不要 —— 不点名就按发布条数兜底的话，会被搬运组和实例侧的伪组名刷满
 - **黑白名单外置**：白名单（放流组排名）与黑名单各放一个 YAML，主配置只留引用；换口味只换文件，主配置不用动
 - **按番剧规定季度与偏移**：和 ASS 一样，季度按番剧给一个值，主 RSS 与副 RSS 的集偏移分开给；实例里已有的订阅同样生效，不必逐个订阅改
-- **站点数据取自实例**：AniBT / AnimeGarden / Mikan 的字幕组列表由 ANI-RSS 接口给出，不重复实现站点解析
+- **两家站点互补**：AniBT 走实例接口（字幕组维度、API 齐全、带热度权重），Nyaa 由 AniSync 自己按关键字搜索（资源覆盖最广）。默认只跑这两家
 - **开箱即用**：`samples/` 里有四份完整配置可直接抄；`samples/groups.md` 是按真实发布数据统计出来的字幕组清单
 - **动手前能备份**：`AniSync backup` 导出订阅存档，`AniSync restore` 还原；`--prune` 连新增的一起删
 - **安全默认**：预览操作只读；自动新增的订阅默认不启用，不触发下载
+- **设置页能干活**：搜 Bangumi 选番剧（带封面与简介）直接加订阅，不用手抄 bgm 链接；深色 / 浅色双模式；每个区块各自带保存按钮，改哪块存哪块
 - **多形态**：CLI、Windows 通知区域托盘、macOS 菜单栏应用、本地 Web 设置页
 - **单一二进制**：无运行时依赖；配置文件与缓存都留在程序同目录，删除目录即卸载干净
 
@@ -108,7 +110,7 @@ listen: 127.0.0.1:51837          # 设置页端口，五位数高位端口
 
 sources:
   instance: ""                   # 站点数据取自哪个实例；留空 = 第一个启用的实例
-  order: [anibt, animegarden, mikan, nyaa]
+  order: [anibt, nyaa]           # 两家互补；animegarden / mikan 也能写，但和 anibt 同类
   cacheMinutes: 720              # 站点数据缓存时长；0 = 不缓存
 
 rules:
@@ -134,14 +136,14 @@ sync:
   # offset: 0
   # standbyOffset: 0
 
-# 自动发现：不用打开 ASS 的 WebUI 加订阅
+# 本季新番：不用打开 ASS 的 WebUI 加订阅
 discover:
   enabled: true                  # 命令行 --discover 等价
-  sources: [animegarden]         # 也可加 bangumi-calendar / bangumi-collections
-  days: 180                      # 首播日期在最近多少天内算在放
+  sources: [yuc]    # 放送表自带 bgmId，是唯一不需要按名字猜番的来源
   limit: 50                      # 每个实例单次最多新增多少条
   enable: false                  # 新订阅是否直接启用；false = 先只建不下载
   # exclude: ['合集', '(?i)国漫|国创']   # 标题黑名单正则
+  # 想换成 animegarden（只列真的有字幕组在做的）时再加 days: 180
 
 # 按番剧规定季度与剧集偏移（和 ASS 一样）：季度按番剧给一个值，
 # 主 RSS 与副 RSS 的集偏移分开给。命中该番剧的订阅都按这里的值写入，
@@ -163,10 +165,10 @@ targets:
 
 ## 工作原理
 
-1. **自动发现**（可选）：扫 AnimeGarden / Bangumi，得到一份「现在在放的番剧」列表；实例里还没有的，
-   被当成自动生成的 `targets` 进入下一步
+1. **本季新番**（可选）：读 Yuc 的当季番剧表，得到这一季要播的日本番剧（Bangumi 补 `bgmId`）；
+   实例里还没有的，被当成自动生成的 `targets` 进入下一步
 2. 调用 `listAni` 读取各实例的订阅
-3. 按 `sources.order` 依次获取候选 RSS；AniBT / AnimeGarden / Mikan 走实例接口，Nyaa 走关键字搜索
+3. 按 `sources.order` 依次获取候选 RSS；AniBT 走实例接口，Nyaa 走关键字搜索
 4. 应用规则过滤与排序：主 RSS 取首项，副 RSS 由 `scope: standby` 规则排序后取前若干项
 5. 与实例现状比对，仅将差异写回；新增的订阅先经 `rssToAni` 由实例解析，再按配置决定是否启用
 
@@ -174,12 +176,14 @@ targets:
 
 ## 站点适配
 
+默认只跑前两行。后两行仍可用（老配置照常生效），只是不再进默认顺序 —— 它们和 AniBT 走同一类实例接口，换不回额外覆盖面。
+
 | 站点 | 数据来源 | 产出形式 |
 | --- | --- | --- |
 | AniBT | 实例的 `aniBTGroup` 接口 | `anibt.net/rss/anime.xml?bgmId=&groupSlug=` |
+| Nyaa | 关键字搜索 RSS，按标题中的 `[放流组]` 聚合 | `nyaa.si/?page=rss&q=&c=0_0&f=0` |
 | AnimeGarden | 实例的 `animeGardenGroup` 接口 | `api.animes.garden/feed.xml?subject=&fansub=` |
 | Mikan | 实例的 `mikanGroup` 接口（入参为番剧页地址） | `mikanani.me/RSS/Bangumi?bangumiId=&subgroupid=` |
-| Nyaa | 关键字搜索 RSS，按标题中的 `[放流组]` 聚合 | `nyaa.si/?page=rss&q=&c=0_0&f=0` |
 
 排查单个番剧未匹配的原因：
 
