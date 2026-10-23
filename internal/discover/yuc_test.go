@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zzzwannasleep/anisync/internal/bgm"
 	"github.com/zzzwannasleep/anisync/internal/cache"
 	"github.com/zzzwannasleep/anisync/internal/httpx"
 )
@@ -109,9 +110,13 @@ func TestYucSubjectsMatchesByJapaneseName(t *testing.T) {
 	}))
 	defer bgmSrv.Close()
 
-	oldAPI, oldYuc := BangumiAPI, YucArchive
-	BangumiAPI, YucArchive = bgmSrv.URL, yuc.URL
-	defer func() { BangumiAPI, YucArchive = oldAPI, oldYuc }()
+	// 三个根地址都要换掉。resolveBySearch 走的是 internal/bgm 的检索接口，
+	// 它有自己的一份 var API —— 只换 discover.BangumiAPI 的话，
+	// 放送表里认不出的那一条会去**真的** api.bgm.tv。测试仍然会过（检索失败就记为认不出），
+	// 但本地跑这个包要 20 秒，就是在等两个 10 秒超时；CI 上则变成一条隐藏的外网依赖。
+	oldAPI, oldYuc, oldBgm := BangumiAPI, YucArchive, bgm.API
+	BangumiAPI, YucArchive, bgm.API = bgmSrv.URL, yuc.URL, bgmSrv.URL
+	defer func() { BangumiAPI, YucArchive, bgm.API = oldAPI, oldYuc, oldBgm }()
 
 	client, err := httpx.New("", 10*time.Second)
 	if err != nil {
