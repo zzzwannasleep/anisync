@@ -30,7 +30,7 @@ AniSync/
   AniSync              程序本体（windows 是 AniSync.exe，macOS 是 AniSync.app）
   config.example.yaml
   README.md
-  01-… 02-… 03-… 04-…  samples/ 里的文件摊平到根目录
+  01-… 02-… 03-… 04-全收.yaml  samples/ 里的文件摊平到根目录
   subs.yaml raws.yaml all.yaml deny.yaml
 ```
 

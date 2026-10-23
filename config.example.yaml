@@ -65,8 +65,8 @@ rules:
   # 规则按声明顺序匹配，第一条命中的生效。文件读不出来会直接报错，不会静默跳过。
   #   primaryFiles  规则文件：点过名的组才进副 RSS；文件顺序就是匹配顺序
   #   denyFiles     黑名单：命中即整个剔除
-  # 完整例子见 samples/subs.yaml（字幕版本分档）、samples/raws.yaml（放流组排名）
-  # 与 samples/deny.yaml（黑名单）。
+  # 完整例子见 samples/subs.yaml（字幕版本分档）、samples/raws.yaml（放流组排名）、
+  # samples/all.yaml（「谁都行」兜底，04 号全收用它）与 samples/deny.yaml（黑名单）。
   # primaryFiles: [raws.yaml, subs.yaml]
   # denyFiles: [deny.yaml]
 

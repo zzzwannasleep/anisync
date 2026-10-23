@@ -6,14 +6,14 @@
 //	  AniSync.exe          程序本体（macOS 上是 AniSync.app）
 //	  config.example.yaml  配置示例
 //	  README.md            样例说明
-//	  01-… 02-… 03-…       三份现成配置
-//	  subs.yaml raws.yaml deny.yaml
+//	  01-… 02-… 03-… 04-…  四份现成配置
+//	  subs.yaml raws.yaml all.yaml deny.yaml
 //
 // 这样「程序产生的文件只在解压出来的那个文件夹里」这条约定才立得住：
 // 运行期文件按 internal/workdir 的规则写在程序同目录，也就是这个文件夹里。
 //
 // 样例摊平到根目录，而不是放进 samples/ 子目录：样例之间按相对路径互相引用
-// （03 号配置里写着 primaryFiles: [subs.yaml, raws.yaml]），
+// （03 号配置里写着 primaryFiles: [raws.yaml, subs.yaml]），
 // 摊平之后「把 03 复制成 config.yaml」这一步才直接可用。
 //
 // 用 Go 写而不是 zip / Compress-Archive，有两个原因：
