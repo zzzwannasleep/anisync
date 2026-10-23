@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,42 @@ func TestPowerShellScriptsAreASCIIOnly(t *testing.T) {
 						path, i+1, col+1, r)
 					break
 				}
+			}
+		}
+	}
+}
+
+// bash 的变量名一直读到「第一个不是变量名字符的字节」为止。变量后面紧跟非 ASCII
+// 字符（中文标点、全角括号）时，在 C locale 下那些字节会被算进变量名 ——
+// `$app（` 于是变成读一个叫 "app（" 的变量，`set -u` 下直接 unbound variable。
+//
+// 踩过一次：package-macos.sh 里的 echo "已生成 $app（$arch，v$version）"
+// 让两个 macOS 构建任务都挂了。规则：变量后面跟非 ASCII 就加大括号。
+func TestShellScriptsBraceVariablesBeforeNonASCII(t *testing.T) {
+	// $name 或 $1 后面直接跟一个非 ASCII 字符
+	risky := regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]|\$[0-9][^\x00-\x7F]`)
+
+	matches, err := filepath.Glob("../*.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("没找到任何 .sh，路径不对？")
+	}
+	for _, path := range matches {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			// 整行注释跳过：注释不会真的去展开变量，而且这里正需要在注释里
+			// 把踩过的写法原样写出来当警示。
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				continue
+			}
+			if found := risky.FindString(line); found != "" {
+				t.Errorf("%s:%d 变量后面紧跟非 ASCII 字符（%q）：改成 ${...}，否则 C locale 下会被当成变量名的一部分",
+					path, i+1, found)
 			}
 		}
 	}

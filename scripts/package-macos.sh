@@ -39,4 +39,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "已生成 $app（$arch，v$version）"
+# 变量后面跟非 ASCII（全角括号、中文标点）时必须加大括号：bash 的变量名一直读到
+# 「第一个不是变量名字符的字节」，C locale 下 $app（ 会被当成读一个叫 "app（" 的变量，
+# set -u 直接 unbound variable。scripts/pack 里有测试盯着这条。
+echo "已生成 ${app}（${arch}，v${version}）"
