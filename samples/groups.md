@@ -1,189 +1,588 @@
-# 组清单（真实数据快照）
+# 组名对照表
 
-这份清单不是凭印象列的，是从站点上真实发布的资源里统计出来的，用来给
-`config.yaml` 的 `rules.primary` 挑组名。改配置前先在这里查一下组名的准确写法。
+改 `rules.primary` 之前先在这里查组名的准确写法。**这张表只有名字，没有别的。**
 
-## 数据来源
+## 一个组有三个名字，写规则时至少要知道前两个
 
-| 项目 | 值 |
-| --- | --- |
-| AnimeGarden 资源样本 | 最近 10000 条（`GET https://api.animes.garden/resources?pageSize=1000&page=1..10`） |
-| AnimeGarden 注册字幕组 | 727 个（`GET https://api.animes.garden/teams`） |
-| 样本里实际有发布的组 | 63 个 |
-| Nyaa 标题样本 | 最近 1800 条（`https://nyaa.si/?c=1_0|1_1|1_2|1_3&p=1..8`） |
+| 名字 | 出现在哪 | 例子 |
+| --- | --- | --- |
+| **显示名** | ANI-RSS 的选组界面、`/teams` 注册表 | `猎户发布组` |
+| **种子里的名字** | 资源标题的方括号里 | `[猎户压制部] 朱色假面 …` |
+| AniBT slug | AniBT 的 RSS 地址参数 | `…&groupSlug=toonshub` |
 
-**注意**：AnimeGarden 注册了 727 个组，但样本里只有 63 个组真的在发资源。
-配置里优先写下面出现过的组名，注册表里那些长期不更新的组写了也匹配不到东西。
+AniSync 判断「这个候选是不是我要的组」时，把 **显示名 + 最近的资源标题** 拼成
+一个字符串再做正则匹配（`internal/rules/rules.go` 的 `matchText`）。所以：
 
-## 怎么在配置里用
+- 走 `anibt` / `animegarden` / `mikan` 时，候选自带显示名，**只写显示名就能命中**
+- 走 `nyaa` 时只有标题，候选的显示名是从 `[方括号]` 里抠出来的 ——
+  **只写显示名会静默匹配不到**，必须写种子里的名字
 
-`rules.primary` 的 `match` 是正则，匹配「字幕组名 + 最近的资源标题」，
-所以语言类型（简日 / 繁日 / 内封）和组名可以写在同一个列表里，靠 `priority` 排序。
+结论：**两个都写上**，用 `|` 串起来。
 
 ```yaml
-rules:
-  primary:
-    - {name: 简日内嵌, match: '(?i)简日|简体|CHS', priority: 10, scope: main}
-    - {name: 桜都字幕组, match: '(?i)sakurato|桜都',   priority: 40, scope: main}
+- {name: 猎户发布组, match: '(?i)猎户发布组|猎户压制部', priority: 40, scope: main}
+- {name: 绿茶字幕组, match: '(?i)绿茶字幕组|綠茶字幕組',   priority: 42, scope: main}
 ```
 
-写组名时注意：
+## 显示名 ≠ 种子名（268 个）
 
-- 中文组名直接写汉字即可；同一个组在 dmhy / 蜜柑 / 萌番组上的名字可能不同，用 `|` 把几种写法都串上
-- 日文组名常有简体/繁体/日文汉字三种写法（例如 `雪飄工作室` / `雪飘工作室`），繁简都写
-- 带特殊符号的组名要转义：`NEO·QSW` 写成 `NEO·QSW`，`❀拨雪寻春❀` 直接写 `拨雪寻春` 更稳
+这些组**必须**把种子里的名字也写进 `match`，否则在 nyaa 上一条也匹配不到。
+同一行的多个名字是同一个组的简繁 / 联合发布写法，用 `|` 串起来。
 
-## 字幕组（标题里有语言标记）
+| 显示名 | 种子里的名字 |
+| --- | --- |
+| 129.3字幕組 | 129\.3字幕组 |
+| 2DLand字幕组 | 2Dland / 2Dland字幕组 |
+| 2KF資源發佈組 | 2000fun★はろ魚 |
+| 404GROUP | 404GROUP / 404GROUP&&桜都字幕组 / 桜都字幕组 |
+| ACE字幕組 | ACE字幕组 / 叉叉动漫字幕组 |
+| ACG调查小队 | acg12\.sub |
+| ANK-Project | ANK-Raws |
+| AOK字幕组 | AOK字幕组 / AOK字幕組 |
+| AZT字幕组 | AZT字幕組 |
+| Amor个人发布 | Amor字幕组 |
+| Amor字幕组 | Amor压制组 / Amor字幕组 |
+| Animerep | AnimeRep |
+| Astral-Union字幕组 | Astral Union |
+| Astro工作室 | 阿童木字幕组 |
+| BYSub | BYsub |
+| BYYM发布组 | BYYM |
+| BlueRabbit | BlueRabbit-Raws |
+| ByConan字幕組 | ByConan |
+| C2Club | C2Club / C2Club&Pmskys / Pmskys |
+| CE家族社字幕组 | CE家族社 / CE家族社&DHR动研字幕组 / DHR动研字幕组 |
+| CHAT RUMBLE | #CHAT RUMBLE# |
+| CLA發佈組 | CLA汉化组 |
+| Clarita 压制组 | Clarita |
+| CureFans小隊 | CureFANS |
+| DA同音爱漫 | DA同音字幕組 |
+| DBD制作组 | DBD-Raws |
+| DHK字幕組 | DHK字幕組 / DHK |
+| DHR动研字幕组 | DHR百合組 |
+| EMe | BLEACH ANIMATION BEST |
+| EggPainRaws | EggPain-Raws |
+| FIX字幕侠 | FIX字幕侠 / FIX字幕侠&涅槃字幕组 / 涅槃字幕组 |
+| FSD字幕组 | 粉羽社 / FSD |
+| FSD粉羽社 | 粉羽社 |
+| F宅字幕组 | F宅 |
+| GMTeam | GM-Team |
+| HGD | 泷沉琉璃 |
+| HKACG香港动漫 | HKACG搬运组 |
+| HKG字幕组 | HKG字幕組 / HKG字幕組&天香字幕社 / 天香字幕社 |
+| HOBBY動漫字幕組 | HOBBY動漫學园組 |
+| HSQ-rip組 | HSQ-rip |
+| IET字幕組 | 酷漫404 |
+| JKworld | JKW |
+| JPSEEK | JPSEEK\.COM |
+| K2字幕組 | K2 |
+| KNA | KNA字幕組 |
+| KRL字幕组 | KRL字幕組 |
+| KaS製作組 | 藪貓字幕組 / 土炮字幕組 |
+| Kirara Fantasia | 黒ネズミたち |
+| Little Subbers! | ❀拨雪寻春❀ |
+| LoveEcho! | AngelEcho |
+| Miga字幕組 | miga!字幕组 |
+| MingYSub | MingY |
+| NTR字幕组 | NTR字幕組 |
+| Nesuto个人发布 | NEST |
+| Nyamazing字幕組 | Nyamazing字幕组 |
+| OTL字幕组 | OTL字幕組 |
+| PHDOGS! | 黑白拼圖組 |
+| Pharos of MyGO | PoM&WM / PoM / WM |
+| R8-Project | R8-Audio |
+| RH字幕组 | RH字幕组 / RH字幕組 |
+| Rakka-Aria | 幸花壓制 |
+| S1百综字幕组 | S1百综字幕组 / 小栗帽后援会&S1百综字幕组 / 小栗帽后援会 |
+| SEVENSTARS-ARMY | SEVENSTARS-ARMY Raws |
+| SFSub | SFSub / SFBgm |
+| SKY字幕组 | 星空字幕组 |
+| SOSG字幕团 | SOSG字幕團 / SOSG字幕团 |
+| Sakura Cafe | Sakura❀Cafe |
+| Sphere-HoLic | Sphere HoLic / SOSG字幕團&Sphere HoLic / SOSG字幕團 / Sphere-HoLic |
+| TAMASHII字幕組 | 特盟TAMASHII字幕組 |
+| TD字幕组 | TD字幕组 / ANK-Raws |
+| TFO字幕组 | TFO字幕組 / TFO字幕组 |
+| THE一滅寂 | THE一灭寂 |
+| THK字幕組 | AcgmTHK |
+| TenYun | 腾云资源组 |
+| The ARC-V Project | NEO The ARC-V Project |
+| Tsubasa字幕组 | Tsubasa字幕組 |
+| U3-Project | U3-Web / U3-Project |
+| VoN Encodes | VonEncodes |
+| Vongola字幕 | Vongola字幕 / vongola字幕 |
+| W-zone字幕组 | WLGO |
+| WBX-SUB | WBX-SUB / WBX-Raws |
+| WHITE MOON | 白月字幕组 / 白月字幕組 |
+| WOLF字幕组 | WOLF字幕组 / WOLF字幕組 |
+| X2字幕组 | X2字幕組 / 天香字幕社 / X2字幕组 / X2字幕組&天香字幕社 |
+| YMDR发布组 | YMDR |
+| Ylbud樱律字幕组 | 樱律字幕组 / 樱律字幕组&茉语月夜 / 茉语月夜 |
+| Zzz睡不醒 | LinRip |
+| asdfe0 | Leopard-Raws |
+| c.c动漫 | c\.c動漫 |
+| masora字幕組 | masora字幕組\(TW\) |
+| orion个人发布 | 猎户不鸽发布组 / 猎户不鸽压制 |
+| restart字幕组 | restart字幕组 / Restart |
+| 下午茶字幕组 | 下午茶字幕组 / 下午茶字幕組 |
+| 中国废柴协会 | CHK |
+| 中肯字幕组 | 中肯字幕組 |
+| 云歌字幕组 | 萌樱字幕组 / 云歌字幕组 |
+| 亿次研同好会 | Billion Meta Lab |
+| 仲夏动漫字幕组 | ZXSUB仲夏动漫字幕组 |
+| 你妹發佈 | Nimei-Raws |
+| 佳芸字幕组 | 佳芸字幕组 / 佳芸字幕组＆爱恋字幕社 |
+| 傲娇零字幕组 | 傲嬌零字幕組 |
+| 傲娇零次元 | 傲娇零字幕组 |
+| 光之园字幕组 | HKACG x 光之园字幕组 |
+| 光之家族字幕组 | OOPart字幕组 |
+| 光荣字幕组 | 光荣字幕·暗 / 光榮字幕·暗 |
+| 八重樱字幕组 | 八重樱字幕组 / 八重櫻字幕組 |
+| 六道我大鸽汉化组 | 六道我大鸽汉化组 / 六道我大鴿漢化組 |
+| 动漫FANS字幕组 | 動漫FANS字幕組 |
+| 动漫先锋 | 动漫先锋字幕组 |
+| 动漫国字幕组 | 動漫國字幕組 / 动漫国字幕组 / 澄空學園&動漫國字幕組 / 澄空學園 |
+| 动漫城堡论坛 | 动漫城堡 |
+| 动漫巴士 | 动漫巴士&天空之城 / 动漫巴士 / 天空之城 |
+| 动漫花园动音组 | 动漫花园☆动音组 |
+| 动漫萌 | 动漫萌 / 爱咕 / 动漫萌&爱咕 |
+| 動漫流行館字幕組 | dmlxg |
+| 動音漫影 | Dymy字幕組 |
+| 千夏字幕组 | 千夏字幕组 / 千夏字幕組 |
+| 千岁字幕组 | 千歲字幕組×動漫先鋒字幕組 / 千岁字幕组×动漫先锋字幕组 |
+| 华盟字幕社 | 澄空学园 / 华盟字幕社 / 澄空学园&华盟字幕社 / 雪飘工作室 |
+| 卡通空間 | 卡通空间 |
+| 叶隐字幕组 | 叶隐 / 极影 / 极影&叶隐 / 叶隐&极影 |
+| 同萌工作室 | 同萌字幕组 / 碧阳X同萌 |
+| 吖吖日剧字幕组 | 吖吖日剧字幕组 / 吖吖日剧字幕组&L\.A\.Y字幕组\] / L\.A\.Y字幕组\] |
+| 听潺社 | 听潺社 / 聽潺社 |
+| 咕咕茶字幕组 | 咕咕茶字幕组 / 咕咕茶字幕組 |
+| 咖啡发布 | 咖啡發佈 |
+| 咪梦动漫组 | MMSUB |
+| 哆啦字幕组 | 哆啦字幕组 / 哆啦字幕組 |
+| 唯易字幕组 | 動漫國×唯易 |
+| 喵酱个人发布 | 喵酱翻译 |
+| 四魂制作组 | 四魂制作组 / 四魂製作組 |
+| 囧夏发布组 | 囧夏字幕组 / 囧夏字幕组&WiKi / WiKi |
+| 圣域字幕组 | 圣域字幕组 / 聖域字幕組 |
+| 夏ノ空汉化协会 | 夏ノ空漫研会 |
+| 夏沐字幕组 | 云歌字幕组 / Amor字幕组&云歌字幕组 / Amor字幕组 |
+| 夏砂字幕组 | 夏砂字幕組 |
+| 夏雪字幕組 | 夏雪字幕组 / 夏雪字幕組 |
+| 夜月字幕組 | 夜月字幕组&梦幻恋樱字幕组 / 夜月字幕组 / 梦幻恋樱字幕组 / 夜月字幕組&夢幻戀櫻字幕組 / 夜月字幕組 / 夢幻戀櫻字幕組 |
+| 夜莺家族 | 夜莺家族 / YYQ字幕组 |
+| 夢域理想鄉 | 梦域理想乡 |
+| 天の字幕组 | 天の字幕組 |
+| 天使字幕组 | 天使字幕組 |
+| 天使羽音 | TSHN字幕組 |
+| 天幻字幕组 | 天幻字幕组&天幻汉化组 / 天幻字幕组 / 天幻汉化组 |
+| 天月動漫發佈組 | Skymoon-Raws |
+| 天空字幕组 | 天空字幕组 / ACB字幕组&天空字幕组 / ACB字幕组 |
+| 天空树双语字幕组 | Skytree |
+| 天香字幕社 | 天香字幕社 / A\.I\.R\.nesSub / 天香字幕社&A\.I\.R\.nesSub |
+| 太古遺產 | 太古音鉴组 |
+| 奇怪机翻组 | 奇怪机翻组 / Strange-Raw |
+| 字幕千本桜 | 字幕 千本櫻 |
+| 小愿8压制组 | BESTW |
+| 小满云电工作室 | 小满云电工作室 / 小满云电工作室&Morehouse-Studio / Morehouse-Studio |
+| 小行字幕组 | 小行字幕组 / 小行字幕組 |
+| 届恋字幕组 | 届恋字幕组 / 野生菌 |
+| 幻樱字幕组 | 幻樱字幕组 / 幻櫻字幕組 |
+| 幻龙字幕组 | 幻龙字幕组 / 幻龍字幕組 |
+| 幽靈字幕組 | 幽靈字幕組- 同音愛漫 |
+| 异域-11番小队 | LowPower-Raws / 异域-11番小队 |
+| 异域动漫 | 异域字幕组 / 異域字幕組 |
+| 得宗字幕组 | 得宗字幕组×拾月出云 |
+| 忘忧字幕组 | Wydao忘忧字幕组 |
+| 恶魔岛字幕组 | 惡魔島字幕組 / 恶魔岛字幕组 |
+| 抽风字幕组 | Infinity Project |
+| 拨雪寻春 | ❀拨雪寻春❀ |
+| 指原 | Sashihara&Sakura / Sashihara / Sakura |
+| 指尖奶茶应援会 | 指尖奶茶應援會 |
+| 摸死团字幕组 | 摸死團字幕組 / 摸死团字幕组 |
+| 散漫字幕组 | 散漫舍字幕组 |
+| 新Sub | 新Sub / 芝士动物朋友 |
+| 旋风字幕组 | 旋風字幕組 / 旋风字幕组 |
+| 星冈汉化联合会 | 星冈学园放送部 |
+| 星空字幕组 | XK SPIRITS / 星空字幕组 |
+| 暖萌的红烧鱼 | 红烧鱼字幕组 |
+| 曙光社字幕组 | 曙光社 / 曙光社&天香字幕社&A\.I\.R\.nesSub / 天香字幕社 / A\.I\.R\.nesSub |
+| 月光恋曲字幕组 | 月光恋曲 |
+| 未央阁联盟 | 晨曦制作 |
+| 未来风ACG | Fuwind |
+| 東攻霸字幕組 | 東攻霸 / 東攻霸字幕組 |
+| 极影字幕社 | 极影字幕·毁片党 / 极影字幕社 |
+| 极速字幕工作室 | 極速字幕工作室 |
+| 枫叶字幕组 | 楓葉字幕組 / 枫叶字幕组 |
+| 柯南事务所 | APTX4869 |
+| 梦幻恋樱 | 夢幻戀櫻字幕組 |
+| 梦物语字幕组 | 梦物语字幕组 / 夢物語字幕組 |
+| 森之屋动画组 | 森之屋动漫&ZeroSub / 森之屋动漫 / ZeroSub |
+| 楓組@花園 | 動漫花園楓組 |
+| 極彩字幕组 | 極彩花夢 |
+| 檸檬字幕组 | 柠檬字幕组 |
+| 汐空字幕组 | 汐空字幕組 |
+| 波洛咖啡厅 | 波洛咖啡厅\\PCSUB |
+| 流云字幕组 | 流雲字幕組 |
+| 游风字幕组 | 游风字幕组 / 游风字幕組 |
+| 漫之学园 | 漫之学园新番组 |
+| 漫之岛动漫 | 龙达字幕组 |
+| 漫友之家压制组 | 漫友之家 / 漫友之家&异域动漫联合压制发布 / 异域动漫联合压制发布 / 漫友之家压制发布 |
+| 漫友之家字幕组 | 漫友之家&星尘字幕组&异域动漫 / 漫友之家 / 星尘字幕组 / 异域动漫 |
+| 漫娱论坛 | 漫娱字幕组 |
+| 漫猫字幕组 | 漫貓字幕組 / 漫猫字幕组 / 愛戀&漫貓字幕組 / 愛戀 |
+| 漫盟之影字幕组 | 漫盟之影字幕組 / 漫盟之影字幕组 |
+| 漫藤字幕组 | 漫藤字幕組 |
+| 爪爪字幕组 | 爪爪Studio |
+| 爱咕字幕组 | 爱咕字幕组 / 爱咕 |
+| 物语系列圈 | 物语系列圈字幕组 |
+| 猎户发布组 | 猎户压制部 |
+| 珞樱字幕社 | 珞櫻字幕社 / 珞樱字幕社 |
+| 生徒会字幕组 | 生徒会字幕组 / 生徒會字幕組 |
+| 白选馆汉化组 | 白选馆汉化组 / 白选馆&夜莺汉化 / 白选馆 / 夜莺汉化 |
+| 白雪字幕社 | 白雪字幕社 / 白雪片源組 |
+| 百冬練習組 | 百冬练习组 / 百冬練習組 |
+| 省电Raws | LowPower-Raws |
+| 矢车菊影音工作室 | 矢车菊影音工作室 / Cornflower Studio |
+| 秋人字幕 | GreatMission字幕小隊 |
+| 空岛字幕组 | 空島動漫 |
+| 米花学园汉化组 | 米花学园汉化组 / 米花学园汉化 |
+| 紫音动漫发布组 | 紫音字幕組 |
+| 织梦字幕组 | 织梦字幕组 / 織夢字幕組 |
+| 绿茶字幕组 | 绿茶字幕组 / 綠茶字幕組 |
+| 美战之星字幕组 | 美战之星 |
+| 翼之梦字幕组 | 千本櫻×翼之夢 / 翼之梦字幕组 |
+| 聆风汉化组 | 聆风汉化 |
+| 联合动漫 | 联合动漫发布 |
+| 肥猫压制 | DAY字幕组 / 肥猫压制 |
+| 脑·洞字幕组 | 脑·洞 |
+| 自由字幕组 | FS-Raw / 桜都字幕组&FS-Raw / 桜都字幕组 |
+| 艾莉希婭 | Kekkan |
+| 花园压制组 | Snow-Raws |
+| 花園奧義社團 | HYO-RAW |
+| 花语发布 | 花語 / 花丸字幕组 |
+| 茉语字幕组 | 茉语星梦 / DHR動研字幕組 |
+| 萌幻字幕组 | 翔空字幕组 |
+| 萌族 | artbook |
+| 萌樱字幕组 | 萌樱字幕组 / 萌樱字幕组&新字幕组 / 新字幕组 |
+| 萌物百科字幕组 | 萌物百科字幕社 |
+| 萌貓同好會 | 萌貓同好會 / 千夏&DHR&萌貓 / 千夏 / DHR / 萌貓 |
+| 藍白條論壇·玖組 | 藍白條論壇·玖組 / 蓝白条论坛·玖组 |
+| 虐心发布组 | 斗罗大陆 2018 |
+| 虚数学区研究协会 | INDRA / INDRA&NMKST / NMKST |
+| 西农YUI汉化组 | 西农YUI汉化组 / 西農YUI漢化組 |
+| 謎萌社 | MYS |
+| 豌豆字幕组 | 豌豆字幕組 / 豌豆字幕组 |
+| 販賣機漢化組 | TOC |
+| 贩卖机汉化组 | TOC |
+| 追放字幕组 | 追放字幕組 |
+| 酢浆草协会 | 酢浆草字幕组 |
+| 酷漫404 | 酷漫404 / 酷漫404❀ |
+| 钉铛字幕组 | 钉铛字幕组 / 钉铛字幕组&独偶字幕组 / 独偶字幕组 |
+| 银刃字幕组 | 銀刃字幕組 |
+| 阿特拉斯字幕组 | 阿特拉斯字幕组·雪原市出差所 |
+| 雪梦字幕组 | 雪梦字幕组 / 雪夢字幕組 |
+| 雪酷字幕组 | 雪酷字幕組 |
+| 雪铃动漫组 | 雪鈴動漫組 / 雪铃动漫组 |
+| 雪飄工作室 | 雪飄工作室 / 雪飘工作室 |
+| 零始字幕組 | ZR0零始字幕组 |
+| 霜庭云花 | 霜庭云花Sub / 霜庭云花Sub&森之屋动画组 / 森之屋动画组 |
+| 霜庭云花Sub | 霜庭云花Sub / 霜庭雲花Sub |
+| 青森小镇 | 青森小鎮 |
+| 音樂@花園 | MGRT |
+| 风之圣殿 | 風之聖殿字幕組 / 风之圣殿字幕组 / 豌豆字幕組&風之聖殿字幕組 / 豌豆字幕組 |
+| 风旅字幕组 | 風旅&PU@C字幕組 / 風旅 / PU@C字幕組 / 風旅字幕組 |
+| 风车字幕组 | 風車字幕組 / 风车字幕组 |
+| 飞橙学院 | 飞橙汉化 |
+| 飞龙骑脸字幕组 | 飞龙骑脸字幕组\(G\.I\.A\.N\.T\) / 飛龍騎臉字幕組\(G\.I\.A\.N\.T\) |
+| 香港動漫 | HKACG搬運組 |
+| 驯兽师联盟 | 馴獸師聯盟 / 驯兽师联盟 |
+| 魯邦聯會 | 魯邦聯會 / 鲁邦联会 |
+| 黑咪漫畫組 | 黑咪漫画組 |
+| 黒川実業字幕組 | 黑川実業字幕組 |
 
-| 组名 | 样本条数 | 语言 / 封装画像 |
-| --- | ---: | --- |
-| Nix-Raws | 922 | 简繁 921、内封 921、WEB 922 |
-| ANi | 747 | 简繁 3、繁体 744、内封 3、WEB 747、HEVC 3 |
-| LoliHouse | 738 | 简日 3、繁日 129、简繁 666、简繁日 129、内封 649 |
-| 绿茶字幕组 | 290 | 简日 103、繁日 187、简繁 85、简繁日 85、内嵌 205 |
-| 桜都字幕组 | 269 | 简繁 90、简体 89、繁体 90、内嵌 179、内封 90 |
-| GMTeam | 231 | 简体 225、4K 130、HEVC 127、10bit 53 |
-| 喵萌奶茶屋 | 225 | 简日 92、繁日 107、简繁 13、简繁日 13、简体 13 |
-| 天月動漫發佈組 | 168 | 简体 30、繁体 129、多语 6、WEB 135、HEVC 3 |
-| 猎户发布组 | 152 | 简日 76、繁日 76、内嵌 152 |
-| 悠哈璃羽字幕社 | 148 | 简日 9、繁日 24、简繁 19、简繁日 14、简体 66 |
-| 爱恋字幕社 | 124 | 简体 50、繁体 50、WEB 4 |
-| 三明治摆烂组 | 100 | 简日 43、繁日 57、简繁 14、简繁日 14、内嵌 86 |
-| 北宇治字幕组 | 96 | 简日 29、繁日 56、简繁 31、简繁日 28、内嵌 65 |
-| 沸班亚马制作组 | 94 | 简繁 94、内封 94、WEB 94、4K 65、HEVC 88 |
-| TSDM字幕组 | 89 | 简日 66、繁日 23、简繁 12、简繁日 12、简体 25 |
-| Zzz睡不醒 | 73 | 繁日 18、简繁 47、简繁日 18、内封 48、BD 31 |
-| Prejudice-Studio | 71 | 简日 5、繁日 13、简繁 13、简繁日 13、简体 52 |
-| 雪飄工作室 | 67 | 简日 13、繁日 50、简繁 26、简繁日 25、繁体 1 |
-| 拨雪寻春 | 62 | 简日 21、繁日 41、简繁 21、简繁日 21、内嵌 41 |
-| 极影字幕社 | 62 | 简体 16、繁体 16 |
-| 银色子弹字幕组 | 60 | 简日 19、繁日 41、简繁 22、简繁日 22、BD 15 |
-| 百冬練習組 | 58 | 简体 29、繁体 29、WEB 16 |
-| 亿次研同好会 | 57 | 简日 15、繁日 30、简繁 15、简繁日 15、内嵌 30 |
-| Nesuto个人发布 | 50 | 简日 11、繁日 37、简繁 39、简繁日 37、内封 49 |
-| 豌豆字幕组 | 48 | 简体 24、繁体 24、BD 2、WEB 2 |
-| SweetSub | 48 | 简日 19、繁日 29、简繁 10、简繁日 10、内封 10 |
-| 黑白字幕组 | 46 | 简体 23、繁体 23、WEB 46、HEVC 22 |
-| 夜莺家族 | 45 | 简日 12、内嵌 1、生肉 10、BD 1、合集 1 |
-| MingYSub | 36 | 简日 12、繁日 24、简繁 12、简繁日 12、内嵌 24 |
-| 樱桃花字幕组 | 33 | 简日 32、内嵌 32 |
-| 咪路fans制作组 | 33 | 简日 15、简体 5、4K 1 |
-| 云光字幕组 | 28 | 简体 28、合集 5 |
-| 驯兽师联盟 | 27 | 简日 13、繁日 14 |
-| 丸子家族 | 23 | 简日 1、简体 11、繁体 11、内嵌 1、BD 1 |
-| 得宗字幕组 | 22 | 简体 11、繁体 11 |
-| 动漫国字幕组 | 18 | 简体 9、繁体 9、BD 4 |
-| 追放字幕组 | 14 | 简体 7、繁体 7 |
-| SFSub | 12 | 简日 3、繁日 3、简体 1、繁体 6、内嵌 6 |
-| 冷番补完字幕组 | 11 | 简繁 7、内封 11 |
-| ToonsHub | 7 | 简体 6、繁体 5、WEB 2、合集 3 |
-| 六四位元字幕組 | 6 | 简体 1、繁体 4、BD 1、10bit 1 |
-| DBD制作组 | 5 | 简繁 2、内封 3、BD 5、HEVC 5、10bit 5 |
-| 艾莉希婭 | 4 | 简繁 2、繁体 1、内封 1、BD 1、WEB 3 |
-| 哆啦字幕组 | 3 | 简日 2、繁日 2 |
-| 星塔汉化组 | 2 | 简日 1、简体 1、内嵌 2、WEB 1 |
-| 诸神字幕组 | 1 | 简日 1、简体 1、BD 1、HEVC 1 |
+## 显示名 = 种子名（198 个）
 
-## 压制组（走 BD / HEVC / 10bit 路线）
+这些组写显示名就够了。带 `&` 的是联合发布，另一个组名也在同一行里。
 
-| 组名 | 样本条数 | 语言 / 封装画像 |
-| --- | ---: | --- |
-| VCB-Studio | 20 | BD 20、HEVC 19、10bit 20 |
-| H-Enc | 12 | BD 12、HEVC 12 |
-| 未央阁联盟 | 7 | BD 3、4K 4、HEVC 7、10bit 4 |
-| Clarita 压制组 | 1 | 繁体 1、内封 1、WEB 1、HEVC 1、10bit 1 |
-| 新Sub | 1 | 简日 1、HEVC 1、10bit 1 |
+<details>
+<summary>展开</summary>
 
-## 搬运 / 聚合发布（产量极高，但认不出语言标记）
+- 2p3
+- 2次元字幕组
+- 76新番小组
+- 7³ACG
+- ACB字幕组
+- ACT-SUB
+- AI-Raws
+- ANK-Raws
+- ANS-Union
+- ANi
+- AQUA工作室
+- AikatsuFans
+- AngelEcho
+- AoiNeko字幕组
+- BBA字幕组
+- BRB
+- Centaurea-Raws
+- CureSub
+- DBFC字幕组
+- DIGI-STUDIO
+- DMS字幕组
+- F-Sky字幕組
+- FANTA·仮
+- FSH字幕组
+- Fatum Fatalis
+- Furretar
+- G-hm
+- H-Enc
+- HoneyGod
+- HorribleSubs
+- KIDFansClub
+- KPDM字幕组
+- Leopard-Raws
+- Liella!の烧烤摊
+- Lilith-Raws
+- LittleBakas!
+- Little字幕组
+- LoliHouse
+- MCE汉化组
+- Mabors-Raws
+- NAZOrip
+- NEO·QSW
+- Niconeiko Works
+- Nix-Raws
+- NoBody
+- Non-Limit FanSubs
+- PoInSu
+- PorterRAWS
+- Prejudice-Studio
+- QS-Raws
+- SFEO-Raws
+- STL字幕组
+- SW字幕组
+- SourGrape
+- SweetSub
+- TC字幕组
+- TD-RAWS
+- TOC
+- TSDM字幕组
+- TUcaptions
+- TensoRaws
+- ToonsHub
+- U2娘@Share
+- VCB-Studio
+- VRAINSTORM
+- Vmoe字幕组
+- Voice Memories
+- X-Raws
+- YG字幕组
+- YWCN字幕组
+- Yw7
+- ZERO字幕组
+- ZaZa-Raws
+- lu-ul
+- あさいのお菓子屋
+- ゆかり王国宣传部
+- 三明治摆烂组
+- 东京不够热
+- 丢丢字幕组
+- 丸子家族
+- 云光字幕组
+- 京黑字幕组
+- 伊恋字幕社
+- 傲嬌字幕組
+- 光之字幕組
+- 冷番补完字幕组
+- 动萌字幕组
+- 北宇治字幕组
+- 吐槽字幕组
+- 启萌字幕组
+- 咪路fans制作组
+- 唯梦字幕组
+- 喵喵字幕组
+- 喵萌奶茶屋
+- 喵萌茶会字幕组
+- 夜明琉璃字幕社
+- 夜莺工作室
+- 天の翼字幕汉化社
+- 天使羽翼字幕组
+- 天蝎字幕组
+- 天鹅之恋
+- 失眠搬运组
+- 宅结界汉化组
+- 幻之字幕组
+- 幻兽之骑士团
+- 幻想字幕组
+- 幻月字幕组
+- 幻樱砂之团
+- 异域字幕组
+- 御宅同萌
+- 微笑字幕組
+- 总有一天汉化组
+- 悠哈璃羽字幕社
+- 成子坂地下室
+- 搖籃字幕組
+- 断扎神教字幕组
+- 新番字幕组
+- 无名字幕组
+- 无戒汉化组
+- 昆侖字幕組
+- 星光字幕组
+- 星尘字幕组
+- 星火字幕组
+- 時雨初空
+- 晚街与灯
+- 智械尚未危机制作
+- 月舞字幕组
+- 桜舞字幕社
+- 桜都字幕组
+- 梦奇字幕组
+- 梦星字幕组
+- 梦蓝字幕组
+- 棒聯貼吧字幕組
+- 楓漫漢化組
+- 樱桃花字幕组
+- 樱花飞舞字幕组
+- 橙白字幕社
+- 氢气烤肉架
+- 水晶海汉化组
+- 汐染字幕社
+- 沸班亚马制作组
+- 清蓝字幕组
+- 清風朔鈴
+- 游離貓字幕組
+- 漫元字幕组
+- 漫游FREEWIND工作室
+- 漫游字幕组
+- 漫游连载组PSS
+- 漫狩汉化组
+- 澄空学园
+- 炎鸟字幕组
+- 烏賊發佈
+- 特別放送
+- 狐狸小宮
+- 猪猪字幕组
+- 百冬练习组
+- 盲点字幕组
+- 神奇字幕组
+- 离谱Sub
+- 科学字幕组
+- 红鸟窝字幕组
+- 绯蓝字幕组
+- 绿之座字幕组
+- 翼の堂字幕组
+- 聆风字幕组
+- 脸肿字幕组
+- 节操字幕社
+- 芝士动物朋友
+- 花見社
+- 茶会字幕组
+- 莳乃字幕屋
+- 萌之音交流論壇
+- 萌月字幕组
+- 萌网
+- 虹咲学园烤肉同好会
+- 诸神字幕组
+- 轻之国度字幕组
+- 追新番字幕组
+- 野比家字幕组
+- 鈴風字幕組
+- 銀月字幕組
+- 银光字幕组
+- 银色子弹字幕组
+- 闲人字幕联萌
+- 隣天使字幕组
+- 零翼字幕组
+- 雷电字幕组
+- 青翼字幕组
+- 风影字幕组
+- 风翼字幕组
+- 风花字幕组
+- 香子兰翻译同好会
+- 魂组
+- 麒麟KIRIN工作室
+- 麦阁字幕组
+- 黑岩射手吧字幕组
+- 黑白字幕组
+- 黑白映画字幕社
 
-这些组的产量能排到全站前列，但标题里几乎没有「简日 / 繁日 / 内封」这类标记，
-说明它们发的是生肉搬运或聚合转发，不是自己做字幕。
-默认规则下它们会靠「发布条数」这个兜底排序挤进副 RSS —— 真实跑出来的
-计划里，`Kirara Fantasia` 出现在十条副 RSS 里的八条。不想要就写进 `rules.deny`。
+</details>
 
-| 组名 | 样本条数 | 语言 / 封装画像 |
-| --- | ---: | --- |
-| Kirara Fantasia | 2833 | 4K 10、HEVC 411 |
-| 魔星字幕团 | 402 | 简繁 46、WEB 402、合集 12 |
-| 萝莉社活动室 | 215 | 简体 1、繁体 1 |
+## AniBT 的 groupSlug（实测见过的）
 
-## 样本太少、认不出性质
+AniBT 的 RSS 地址是 `…&groupSlug=<slug>`。这些 slug 是从真实实例的订阅地址里反查出来的，
+手改 `url` 时会用到。显示名到 slug 没有通用规律（`绿茶字幕组` 是 `studio-greentea`），
+所以这里只列实测见过的。
 
-样本里只出现个位数次，语言标记也不明显。想用的话先点进站点确认它在发什么。
+| 显示名 | slug |
+| --- | --- |
+| ANi | `ani` |
+| Ansgwrt | `ansgwrt` |
+| LoliHouse | `lolihouse` |
+| MingYSub | `mingysub` |
+| NEST | `nest` |
+| Nix-Raws | `nix-raws` |
+| ToonsHub | `toonshub` |
+| 三明治摆烂组 | `smzase` |
+| 拨雪寻春 | `haruhana` |
+| 晚街与灯 | `banngai` |
+| 桜都字幕组 | `sakurato` |
+| 绿茶字幕组 | `studio-greentea` |
+| 银色子弹字幕组 | `sbsub` |
 
-| 组名 | 样本条数 | 语言 / 封装画像 |
-| --- | ---: | --- |
-| 天使动漫论坛 | 5 | （标题里没有可识别的语言/封装标记） |
-| NEO·QSW | 4 | WEB 4 |
-| FSD粉羽社 | 3 | （标题里没有可识别的语言/封装标记） |
-| DBFC字幕组 | 2 | （标题里没有可识别的语言/封装标记） |
-| 漫游字幕组 | 1 | 内嵌 1、4K 1、合集 1 |
-| 百冬练习组 | 1 | 繁体 1、WEB 1 |
-| 芝士动物朋友 | 1 | 简繁 1、内封 1、WEB 1、HEVC 1 |
-| PorterRAWS | 1 | WEB 1 |
-| 零始字幕組 | 1 | BD 1 |
+## 只有种子名、不在 AnimeGarden 注册表里的
 
-## Nyaa 放流组
+这些是 Nyaa 侧的英文放流组，dmhy 上没有条目，所以 `/teams` 里查不到。
+写规则时只能按种子里的名字写。
 
-Nyaa 没有「字幕组」维度，RSS 一律是关键字搜索型。AniSync 会搜一次，
-从标题里提取 `[组名]`，再给每个组生成一个限定搜索词的 RSS。
-下表按「有单集特征的标题条数」排序，只保留真正在发周更番剧的组。
+| 种子里的名字 | 说明 |
+| --- | --- |
+| `Erai-raws` | CR / 多语，覆盖面最广 |
+| `SubsPlease` | CR 源，出得快 |
+| `Judas` | CR 源，HEVC 10bit |
+| `ASW` | HEVC 10bit |
+| `Yameii` | 英配为主 |
+| `AnoZu` | CR 源 |
+| `DKB` | CR 源，Dual-Audio |
+| `Trix` | CR 源 |
+| `KiyoshiiSubs` | CR 源 |
+| `NKWT` | CR 源 |
+| `Ironclad` | AV1 |
+| `SubsPlus+` | ADN 源 |
 
-| 组名 | 单集条数 | 总条数 | 备注 | 样例标题 |
-| --- | ---: | ---: | --- | --- |
-| Doomdos | 174 | 174 | 国漫 | [Doomdos] - Shiguang Dailiren - S03E12 [1080p BILIBILI COM WEB-DL] [Link Click… |
-| Erai-raws | 89 | 92 |  | [Erai-raws] FX Senshi Kurumi-chan - 04 [480p CR WEB-DL AVC AAC][MultiSub][901F… |
-| SubsPlease | 66 | 90 |  | [SubsPlease] FX Senshi Kurumi-chan - 04 (1080p) [F89CC7E7].mkv |
-| ToonsHub | 60 | 63 |  | [ToonsHub] FX Fighter Kurumi-chan S01E04 1080p CR WEB-DL DUAL AAC2.0 H.264 (FX… |
-| ANi | 55 | 55 |  | [ANi] FX Senshi KURUMICHAN /  FX 戰士久留美 - 04 [1080P][Baha][WEB-DL][AAC AVC][CHT… |
-| LoliHouse | 34 | 37 |  | [LoliHouse] GIRLS BAND CRY 1st Album [棘アリ] [BDRip 1080p HEVC-10bit FLAC] |
-| AnoZu | 29 | 31 |  | [AnoZu] FX Fighter Kurumi-chan S01E04 1080p CR WEB-DL Dual-Audio DDP 2.0 H.264… |
-| GM-Team | 27 | 27 | 国漫 | [GM-Team][国漫][灵境行者][Spirit Realm Walker][2026][09][HEVC][GB][4K] |
-| Yameii | 22 | 22 |  | [Yameii] The World&#39;s Strongest Witch - S01E01 [English Dub] [CR WEB-DL 108… |
-| ASW | 21 | 22 |  | [ASW] Kikansha no Mahou wa Tokubetsu desu - 15 [1080p HEVC x265 10Bit][AAC] |
-| 桜都字幕组 | 18 | 18 |  | [桜都字幕组] FX战士久留美 / FX Senshi Kurumi-chan [03][1080P][简繁内封] |
-| DKB | 16 | 17 |  | [DKB] Cyberpunk Edgerunners - (Season 02) [1080p][HEVC x265 10bit][Dual-Audio]… |
-| Judas | 14 | 16 |  | [Judas] Kikansha no Mahou wa Tokubetsu desu (A Returner&#39;s Magic Should Be … |
-| Shridhuu | 12 | 14 | 国漫 | [Shridhuu][1080p] Spare Me, Great Lord! / 大王饶命 / Da Wang Rao Ming - S03E05 |
-| 绿茶字幕组 | 12 | 13 |  | [绿茶字幕组] 僵尸搜寻中 / Zombie Sagashitemasu [02][WebRip][1080p][简繁日内封] |
-| Gecko | 8 | 9 | 国漫 | [Gecko] The Guardian of Daxia - S01E10 (大夏守墓人; Daxia Shou Mu Ren) [WETV.WEB-DL… |
-| WF | 7 | 7 |  | [WF] BLEACH: Sennen Kessen-hen - 49 [WEB-DL CR 1080p x264 AAC][PT-BR] (Bleach:… |
-| Anime Time | 6 | 8 |  | [Anime Time] Reincarnated As A Sword - S02E01 [1080p][HEVC 10bit x265][AAC][Du… |
-| Feibanyama | 6 | 6 |  | [Feibanyama] As a Reincarnated Aristocrat Ill Use My Appraisal Skill to Rise i… |
-| 綠茶字幕組 | 6 | 6 |  | [綠茶字幕組] 描繪直至生命盡頭 / 畫完這個就去死 / Kore Kaite Shine [08][WebRip][1080p][繁日內嵌] |
-| Ironclad | 5 | 6 |  | [Ironclad] Tensei Shitara Ken Deshita - S02E04 [WEB.1080p.AV1] \| Reincarnated… |
-| Diogo4D | 5 | 6 |  | [Diogo4D] [BD][1080p] Turma de Elite 3.ª Temporada - 02 (Youkoso Jitsuryoku Sh… |
-| FLsnow | 5 | 5 |  | [FLsnow][おねがいアイプリ/Onegai_Aipri][1080P][29][CHS/CHT&amp;JPN] |
-| 喵萌奶茶屋&amp;LoliHouse | 4 | 4 |  | [喵萌奶茶屋&amp;LoliHouse] 被放逐的作弊赋予魔法师享受随心所欲的第二人生。~不只是武器，我还能赋予万物「强化点数」，且能照我的意思随时解除，… |
-| SFSub | 4 | 4 |  | [SFSub] FX战士久留美 / FX Senshi Kurumi-chan - 03 [WebRip][1080P][AVC][AAC][简日内嵌][M… |
-| ❀拨雪寻春❀ | 3 | 4 |  | [❀拨雪寻春❀] 恶女不才，请多包涵 ~雏宫蝶鼠换身传~ / ふつつかな悪女ではございますが / Futsutsuka na Akujo de wa Goz… |
-| TSPlease | 3 | 3 |  | [TSPlease] The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life S01E… |
-| 三明治摆烂组&amp;LoliHouse | 3 | 3 |  | [三明治摆烂组&amp;LoliHouse] 乱世千金倪亚·利斯顿转生为娇弱千金的弑神武人华丽无双录 / Kyouran Reijou Nia Liston… |
-| FênixFansub | 3 | 3 |  | [FênixFansub] Kyouran Reijou Nia Liston - 03 [PT-BR] |
-| 银色子弹字幕组 | 3 | 3 |  | [银色子弹字幕组][名侦探柯南][第1217集 背后的推手][WEBRIP][简繁日多语MKV][PGS][1080P] |
-| Billion Meta Lab | 3 | 3 |  | [Billion Meta Lab] 魔法姐妹露露莉莉 Mahou no Shimai Rurutto Riryi [14][1080P][HEVC-10b… |
-| Trix | 2 | 5 |  | [Trix] The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life S01E03 [… |
-| Kekkan | 2 | 3 |  | [Kekkan] Kyouran Reijou Nia Liston - S01E02 (WebRip 1080p AV1 Multi-Subs) / 凶乱… |
-| SubsPlus+ | 2 | 2 |  | [SubsPlus+] Reincarnated as a Sword - S02E04 (ADN WEB-DL 1080p AVC AAC) \| Ten… |
-| Buzz-Subs | 2 | 2 |  | [Buzz-Subs] Black Clover (2017) S02E03 (1080p Web-Encode AV1) [Eng-Subs].mkv |
-| 绿茶字幕组&amp;LoliHouse | 2 | 2 |  | [绿茶字幕组&amp;LoliHouse] 描绘直至生命尽头 / 画完这个就去死 / 畫完這個再去死 / これ描いて死ね / Kore Kaite Shin… |
-| 北宇治字幕组 | 2 | 2 |  | [北宇治字幕组] FX戰士久留美 / FX Senshi Kurumi-chan [02][WebRip][HEVC_AAC][繁日內嵌] |
-| Naruto-Kun.Hu | 2 | 2 |  | [Naruto-Kun.Hu] Dragon Ball Super - Beerus - 02 [1080p].mkv |
-| KiyoshiiSubs | 2 | 2 |  | [KiyoshiiSubs] Bleach Sennen Kessen-hen - 49 [1080p][H.265 - 10Bit].mkv |
-| NKWT | 2 | 2 |  | [NKWT] Shuiro no Kamen - 02 [1080p].mkv |
+## 认不出的（150 个）
 
-「国漫」标记的是华语原声/国漫放流（例如 `Doomdos` 的《时光代理人》、`GM-Team` 的
-《灵境行者》）。追日本番剧的话把它们写进 `rules.deny`，否则它们会占掉副 RSS 的位置。
+这些组在样本里**没有**一个稳定的、出现在标题最前面的方括号名 —— 要么发的是音乐 / ASMR / 漫画，
+要么标题格式不固定（不同时期换过名字）。要用的话先去站点上看它最近几条标题怎么写。
 
-## 刷新这份清单
+> 2B4B · 80v08 · A.I.R.nesSub · ACG · ACG字幕组 · ARIA · ARIA吧汉化组 · AVCHD · AcgN深雪 · Acgnation · Alchemist · Billion Meta Lab · C.C字幕组 · CYsub.蟾蜍字幕組 · DM1080P冷番组 · DewDream · ErS贰石字幕组 · FirstLove字幕組 · GAL-Sora论坛 · GCF字幕組 · HC推广站 · HDU小镇 · HTP字幕组 · I've工作室 · KFC特創組 · KW-RAWS · MT字幕组 · MechaAnime_Fan_Sub · MeiYangYang Raws · Morehouse-Studio · NC-Raws · NEW_NODE · OPFans枫雪动漫 · OUR字幕组 · PMFAN字幕组 · PS900W · PokerFans字幕组 · Producer字幕组 · RvE发布组 · S.T.R.SubFans · SNOW放映社 · Sakura · ScP-Team · TK-Raws · TPTimE字幕组 · VAXVA · Yaku-Raws · ZRO字幕组 · ay字幕组 · c-a Raws · ebbSub · shenghuo2个人发布 · 业界毒瘤 · 中國動物園 · 乐园字幕组 · 云电工作室 · 交响梦工坊 · 今晚月色真美个人发布 · 代理發布組 · 众神之王字幕组 · 伪世界汉化组 · 佐贺僵尸中文电台汉化组 · 光见守ACG家族 · 兔叽个人发布 · 六四位元字幕組 · 动漫之家 · 动漫怨念屋 · 动漫花园 · 动漫萌系字幕组 · 勇氣字幕組 · 動音律 · 君の名は。FANS字幕組 · 哇酷字幕研究社 · 四季字幕组 · 夕唯工作室 · 夜楓字幕組 · 天使动漫论坛 · 天行搬运 · 宅宅合集 · 小花花同盟戰線 · 御宅爱萌家族 · 悠久の风 · 情愫影音 · 提灯喵甄选百合 · 放学后的死神 · 星塔汉化组 · 星空网 · 暮秋夏夜の部屋 · 柠檬水字幕组 · 树屋字幕组 · 梦幻旋律发布组 · 森 · 楓雪連載製作 · 榴莲糖字幕组 · 樱の萌字幕组 · 樱翼汉化组 · 檸檬好酸字幕組 · 櫻戀字幕組 · 歐克勒亞 · 步姐動漫 · 每日学园 · 永恒solo · 永恒动漫 · 沸羊羊字幕组 · 海贼王微圈 · 漫影字幕组 · 炒冷番字幕组 · 無根之樹分享組 · 熔岩动画 · 爱恋字幕社 · 狮王汉化组 · 猎户起源发布组 · 猴団汉化组 · 琵琶行字幕组 · 白恋字幕组 · 白虎野 · 真龙会星际文件组 · 碧陽字幕組 · 神帆动漫 · 神帆字幕组 · 秋人摸魚 · 空境字幕组 · 章魚动漫 · 第五舰队 · 紫月發佈組 · 繁星字幕组 · 繁體動畫字幕聯盟 · 红烧鱼字幕组 · 红莲汉化组 · 腹黑联盟 · 臭臭动漫整合 · 萌FUN字幕组 · 萌乐动漫 · 萌幻茶社 · 萝莉社活动室 · 蔓越莓字幕组 · 蔷薇园动漫 · 虹之咲字幕组 · 謎之自壓組 · 资源萌茶会 · 野猫字幕组 · 鋼244 · 铜锣字幕组 · 闺房调查团 · 雾雨字幕组 · 霜月字幕組 · 高木同学 · 魔星字幕团 · 黙示茶社 · 龙达字幕组
+
+## 注册了但查不到资源（111 个）
+
+AnimeGarden 注册表里有这些组，但最近 100 条资源查不到任何条目，多半已经停更。
+写了也匹配不到东西，不用管。
+
+> 08MV小隊 · 178在线动漫 · 3DH字幕组 · 3DM动漫组 · 6d字幕社 · BDC字幕组 · BTC-Distro · Cornflower Studio · DAY字幕组 · DMHY_RAINS · GZone Anime · JPOPPV联盟 · Lost Summer工作室 · LoveEcho!Sub · MC日劇字幕組 · NGMFans · NaN-Raws · RP工作室 · ReSeeD@花園 · SOSROOM字幕组 · S群字幕組 · T3@花園 · THE一灭寂 · VGMU · WLGO · Xeon-Raw · YYK字幕组 · YYeTs日翻组 · Yuuki个人发布 · dmlxg · ileheart非公式搬运 · v-bird-Eros · 不靠谱字幕组 · 中国龙珠论坛 · 人人影视发布组 · 今晚月色真美 · 伊妹兒字幕組 · 依缘字幕组 · 光の影字幕组 · 冰封字幕组 · 动漫御宅 · 動漫花園字幕組 · 卡萌动漫 · 卡通空间 · 名侦探柯南事务所 · 咖啡字幕組 · 四叶星字幕组 · 回风汉化组 · 复活城猫咪 · 夜枫字幕组 · 夜露思苦漢化組 · 天籁字幕社 · 天马之心 · 奥盟字幕组 · 学院字幕组 · 安達充主題論壇 · 希望之丘 · 幻境字幕社 · 御の萌漫屋 · 御坂字幕组 · 御宅梦域 · 御宅领域 · 忍术学园 · 愛班漫畫社 · 推子字幕组 · 摇篮字幕组 · 无损疯人组 · 星冈学园放送部 · 星期五字幕组 · 星组@花園 · 木木工作室 · 枫组@花园 · 棒联贴吧字幕组 · 樱雨学园 · 欧克勒亚 · 氢气烧烤架 · 流鳴聯合本居 · 游离猫字幕组 · 漫翔字幕組 · 爱恋研修社 · 牧云字幕组 · 狗狗制作组 · 狼集字幕组 · 猫通信个人翻译 · 神创资源组 · 空翼字幕组 · 竹零字幕 · 绝望御宅发布组 · 绯空字幕社 · 艾莉希娅 · 花园奥义社团 · 草莓工作組 · 萌之萝莉 · 萌楼字幕组 · 萌音字幕组 · 蓝白条论坛·玖组 · 薮猫字幕组 · 謎之聲字幕組 · 谜萌社 · 超盟字幕组 · 量子動漫组 · 钢244 · 雪月字幕組 · 露西弗工作室 · 靈風FOSKY工作室 · 音の谜森 · 魔影字幕组 · 魔防队新番组 · 鲁邦联会 · 黑博物館 · 黑岩射手字幕组
+
+## 这张表是怎么来的
+
+`/teams` 给出注册表里全部 **727** 个组（每个带 dmhy / 萌番组 / 蜜柑的 id）。
+对每个组查一次 `/resources?fansub=<显示名>&pageSize=100`，把每条标题里
+**所有** `[方括号]` 与 `【全角括号】` 的内容抠出来，按两条规则定组名：
+
+1. **位置优先**：dmhy 的惯例是组名写在标题最前面。
+   反例是 `【百冬练习组】【BanG Dream Yumemita】[13]` —— 作品名出现在 100% 的标题里，
+   而组名因为简繁两种写法各占 50%，按出现率排会把作品名排到前面。
+2. **出现率兜底**：至少出现在 30% 的标题里，且不少于 3 条。
+   分辨率 / 编码 / 语言 / 封装 / 集数 / 栏目名（`【2026秋季日剧】`）会被词表滤掉。
+
+要重新扫（比如换季之后想更新）：
 
 ```bash
-# 1. 注册的全部字幕组（带 dmhy / 萌番组 / 蜜柑 三站 ID，可用于反查别名）
-curl 'https://api.animes.garden/teams' -o teams.json
-
-# 2. 最近资源（fansub 字段就是组名，title 里有语言与封装标记）
-curl 'https://api.animes.garden/resources?pageSize=1000&page=1' -o res1.json
-
-# 3. Nyaa 各分类的最近标题
-curl 'https://nyaa.si/?c=1_2&f=0&p=1' -o nyaa1.html
+curl -s 'https://api.animes.garden/teams' -o teams.json
+# 每个组的种子名：
+curl -s 'https://api.animes.garden/resources?fansub=LoliHouse&pageSize=100' \
+  | jq -r '.resources[].title' | head
 ```
+
+> 注意 `api.animes.garden` 会限流，连着打几百个请求会拿到 `429`，隔一会儿重试即可。

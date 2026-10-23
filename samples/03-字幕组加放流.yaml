@@ -1,0 +1,59 @@
+# AniSync 配置样例 03：字幕组主 + 放流组副（最常用的一种）
+#
+# 适合：想要中文字幕，但又不愿意为了等字幕组而漏集。
+#
+# 主 RSS 是字幕组 / 压制组（subs.yaml 排第一的 LoliHouse 这种），
+# 副 RSS 是放流组（raws.yaml 排第一的 ToonsHub）—— 字幕组还没出的时候先顶上，
+# 出了之后主 RSS 会按规则换成字幕组那版。
+#
+# 这是怎么做到的：两个文件一起引用，
+#   subs.yaml 里的规则是 scope: main  —— 只参与挑主 RSS
+#   raws.yaml 里的规则是 scope: both  —— 主副都参与，但 priority 从 300 起
+# 于是主 RSS 永远先给字幕组（10~210），只有某部番没有任何字幕组在做时
+# 才退回落在这份放流名单上；副 RSS 因为 subs.yaml 不参与，只会在放流组里选。
+#
+# 怎么用：
+#   1. 整份复制成程序同目录的 config.yaml（subs.yaml / raws.yaml / deny.yaml 一起拿）
+#   2. 改下面 instances 里的 baseUrl 和 apiKey
+#   3. AniSync check / plan / sync -y
+#
+# 怎么改：两个名单文件里的顺序都是偏好，数字越小越优先。组名怎么写见 groups.md。
+
+listen: 127.0.0.1:51837
+# proxy: http://127.0.0.1:7890
+
+sources:
+  instance: ""
+  order: [anibt, nyaa]
+  stopOnFirstMatch: false
+  timeoutSeconds: 25
+  cacheMinutes: 720
+
+rules:
+  # 想要几条副 RSS 就把这个数字调大 —— 点过名的放流组会按顺序依次填进去。
+  maxStandby: 1
+
+  # 顺序有意义：subs.yaml 在前、raws.yaml 在后，priority 也是 subs 更小。
+  primaryFiles: [subs.yaml, raws.yaml]
+  denyFiles: [deny.yaml]
+
+  deny:
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    apiKey: ${ANISYNC_KEY}
+
+targets: []
+
+sync:
+  intervalMinutes: 0
+  preview: false
+  addMissing: false
+
+discover:
+  enabled: true
+  sources: [yuc]
+  limit: 50
+  enable: false

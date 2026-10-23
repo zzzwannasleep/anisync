@@ -14,7 +14,7 @@ internal/rules       规则编译、打分、去重
 internal/planner     计划生成与执行
 internal/webui       本地设置页（内嵌资源，无前端构建步骤）
 internal/tray        托盘：Windows 通知区域、macOS 菜单栏
-samples/             开箱即用的配置样例与组清单
+samples/             开箱即用的配置样例与组名对照表
 scripts/             构建与打包脚本
 docs/                文档
 ```

@@ -8,7 +8,7 @@ import (
 // 样例配置是给用户直接抄的，一旦配置结构变了而样例没跟着改，用户抄过去就是一堆报错。
 // 这个测试把 samples/ 下每一份主配置都真正加载并校验一遍，让样例不会悄悄烂掉。
 //
-// 只挑「数字开头」的文件：samples/ 里还有 deny.yaml / standby.yaml 这些外置规则文件，
+// 只挑「数字开头」的文件：samples/ 里还有 subs.yaml / raws.yaml / deny.yaml 这些外置规则文件，
 // 它们是片段不是配置，拿 Load 去读必然失败。外置文件本身由 Load 顺带校验 ——
 // 路径写错、格式不对都会让这里直接红。
 func TestSampleConfigsAreValid(t *testing.T) {

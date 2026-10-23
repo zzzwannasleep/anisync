@@ -1,0 +1,31 @@
+# AniSync 放流组排名（生肉 / 原声，不做字幕或只做硬字幕）
+#
+# scope: both —— 主副 RSS 都参与，这是「只追放流」那一份的主名单，
+# 也是「字幕组加放流」那一份的副名单。
+#
+# 为什么 priority 从 300 起：和 subs.yaml 一起用时（03 号样例），
+# 字幕组的规则是 10~210，这里必须排在后面，主 RSS 才会优先给字幕组；
+# 只有某部番没有任何字幕组在做时，才退回落在这里的放流组。
+# 单独用时（01 号样例）没有竞争，排第一的就是主 RSS。
+#
+# 顺序就是偏好，数字越小越优先。想捧谁调小，想踩谁调大或写进 deny.yaml。
+#
+# 名字怎么写、种子里的实际名字是什么，见同目录 groups.md。
+# 下面每个 match 都同时覆盖「显示名」和「种子里的名字」两种写法 ——
+# 走 nyaa 时只有标题，只写显示名会静默匹配不到。
+
+- {name: ToonsHub,    match: '(?i)toonshub',                 priority: 300, scope: both}
+- {name: ANi,         match: '(?i)^ani\b|\[ani\]',           priority: 310, scope: both}
+- {name: Nix-Raws,    match: '(?i)nix-raws|nc-raws',         priority: 320, scope: both}
+- {name: Erai-raws,   match: '(?i)erai-raws',                priority: 330, scope: both}
+- {name: SubsPlease,  match: '(?i)subsplease',               priority: 340, scope: both}
+- {name: Lilith-Raws, match: '(?i)lilith-raws',              priority: 350, scope: both}
+- {name: Judas,       match: '(?i)^judas\b|\[judas\]',       priority: 360, scope: both}
+- {name: ASW,         match: '(?i)^asw\b|\[asw\]',           priority: 370, scope: both}
+- {name: AnoZu,       match: '(?i)anozu',                    priority: 380, scope: both}
+- {name: DKB,         match: '(?i)^dkb\b|\[dkb\]',           priority: 390, scope: both}
+
+# ANi / Judas / ASW / DKB 这几个名字很短，`\bani\b` 这种写法会在作品名里误伤 ——
+# 比如标题是「Ani ni Tsukeru Kusuri wa Nai」时，`\bani\b` 会命中作品名里的 Ani，
+# 于是这条规则把一部根本不是 ANi 发的番认成 ANi。所以改成只认两种位置：
+# 开头的（候选显示名就是它）和方括号里的（种子标题里的组名）。

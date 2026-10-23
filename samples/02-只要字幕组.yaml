@@ -1,0 +1,60 @@
+# AniSync 配置样例 02：只要字幕组
+#
+# 适合：只认中文字幕组，主 RSS 定死一个字幕组，**不配副 RSS**。
+#
+# 主 RSS 用 subs.yaml 里排第一的（LoliHouse）。
+# 这份配置里没有任何 scope: standby 的规则 —— 按 AniSync 的「点名制」，
+# 没被点过名的组一律不进副 RSS，所以写回实例时 standbyRssList 会是空的。
+#
+# 什么时候该这么配：你只认这一家的字幕（比如只看简繁内封，别的版本一概不要），
+# 缺集就等它补，不需要备胎。缺集时宁可空着也不要一个风格不同的版本。
+#
+# 想要「主字幕组 + 副放流组」的组合，用 03 号样例。
+#
+# 怎么用：
+#   1. 整份复制成程序同目录的 config.yaml（subs.yaml 和 deny.yaml 一起拿）
+#   2. 改下面 instances 里的 baseUrl 和 apiKey
+#   3. AniSync check / plan / sync -y
+#
+# 怎么改：subs.yaml 里的顺序就是偏好。组名怎么写见 groups.md。
+
+listen: 127.0.0.1:51837
+# proxy: http://127.0.0.1:7890
+
+sources:
+  instance: ""
+  # 只用 anibt 也够 —— 这份配置只认字幕组，而字幕组基本都在 anibt 上。
+  # 想多一层覆盖面就把 nyaa 加回来。
+  order: [anibt, nyaa]
+  stopOnFirstMatch: false
+  timeoutSeconds: 25
+  cacheMinutes: 720
+
+rules:
+  # 没有 standby 规则时这个值不起作用（点名制：没点过名的一个都不要）。
+  # 想恢复副 RSS，就把 raws.yaml 加到下面 primaryFiles 里，或者自己写一条 scope: standby。
+  maxStandby: 1
+
+  primaryFiles: [subs.yaml]
+  denyFiles: [deny.yaml]
+
+  deny:
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    apiKey: ${ANISYNC_KEY}
+
+targets: []
+
+sync:
+  intervalMinutes: 0
+  preview: false
+  addMissing: false
+
+discover:
+  enabled: true
+  sources: [yuc]
+  limit: 50
+  enable: false

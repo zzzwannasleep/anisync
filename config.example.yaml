@@ -1,8 +1,9 @@
 # AniSync 配置示例：复制为 config.yaml，与程序放在同一个目录。
 # 所有运行期文件都留在程序同目录：config.yaml 与 data/cache.json。
 #
-# 不想从零写的话，samples/ 目录里有几份现成的完整配置（中文优先 / 收藏党 / 生肉 / 全自动追番），
-# 整份复制过来改掉 instances 就能用；samples/groups.md 是真实数据统计出来的字幕组清单。
+# 不想从零写的话，samples/ 目录里有三份现成的完整配置（只追放流 / 只要字幕组 /
+# 字幕组加放流），整份复制过来改掉 instances 就能用；
+# samples/groups.md 是组名对照表（显示名 ↔ 种子里的实际名字）。
 
 # 本地设置页监听地址。用五位数高位端口，避开常见服务端口与系统动态端口区间。
 listen: 127.0.0.1:51837
@@ -57,8 +58,9 @@ rules:
   # 顺序是「内联在前、文件按声明顺序在后」。文件读不出来会直接报错，不会静默跳过。
   #   primaryFiles  白名单：副 RSS 只放这里点过名的组，顺序就是优先级
   #   denyFiles     黑名单：命中即整个剔除
-  # 完整例子见 samples/standby.yaml 与 samples/deny.yaml。
-  # primaryFiles: [standby.yaml]
+  # 完整例子见 samples/subs.yaml（字幕组排名）、samples/raws.yaml（放流组排名）
+  # 与 samples/deny.yaml（黑名单）。
+  # primaryFiles: [subs.yaml, raws.yaml]
   # denyFiles: [deny.yaml]
 
   # 命中即丢弃该候选。比调 priority 更狠：调 priority 只是排后面，deny 是直接不要。

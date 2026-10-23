@@ -1,0 +1,75 @@
+# AniSync 配置样例 01：只追放流（生肉 / 原声）
+#
+# 适合：不要中文字幕，只要第一时间拿到片子 —— 自己压、自己配外挂字幕。
+#
+# 主 RSS 与副 RSS 都是放流组：主用 raws.yaml 里排第一的（ToonsHub），
+# 副用排第二的（ANi）。副 RSS 的作用是主 RSS 缺集时顶上，所以要选几乎每集都发的。
+#
+# 怎么用：
+#   1. 整份复制成程序同目录的 config.yaml（raws.yaml 和 deny.yaml 一起拿）
+#   2. 改下面 instances 里的 baseUrl 和 apiKey
+#   3. AniSync check      校验配置、测试实例连通性
+#   4. AniSync plan       看一眼要改什么（只读，不写任何东西）
+#   5. AniSync sync -y    确认无误再执行
+#
+# 怎么改：raws.yaml 里的顺序就是偏好，数字越小越优先。组名怎么写见 groups.md。
+
+listen: 127.0.0.1:51837
+
+# 访问站点用的代理。留空则用环境变量 ANISYNC_PROXY，其次 HTTPS_PROXY / HTTP_PROXY。
+# 从国内直连 nyaa.si、api.bgm.tv 与封面图床 lain.bgm.tv 通常不通，配一个本地代理最省事。
+# 设置页的「网络与代理」里也能改这一项。
+# proxy: http://127.0.0.1:7890
+
+sources:
+  # 站点数据借用哪个实例的接口；留空 = 第一个启用的实例。
+  instance: ""
+  # anibt 走实例接口（字幕组维度、API 齐全），nyaa 由 AniSync 自己按关键字搜。
+  # 放流组里 Erai-raws / SubsPlease 这些只在 nyaa 上有，所以两家都要开着。
+  order: [anibt, nyaa]
+  stopOnFirstMatch: false   # true = 第一个有结果的站点就停，快但副 RSS 会变少
+  timeoutSeconds: 25
+  cacheMinutes: 720         # 站点数据缓存 12 小时，后台自动跑时不必反复翻站点
+
+rules:
+  # 每条订阅保留几条副 RSS。默认 1，也就是 raws.yaml 里排第二的那个放流组。
+  maxStandby: 1
+
+  # 主名单不写在这里，放在 raws.yaml：换口味只改那个文件，这份配置一个字不用动。
+  # 相对路径按本文件所在目录解析；文件读不出来会直接报错，不会静默跳过。
+  primaryFiles: [raws.yaml]
+  denyFiles: [deny.yaml]
+
+  # 内联的黑名单：放「个人口味」这一类，和共享的 deny.yaml 分开。
+  deny:
+    # 周更观看不要合集/全集，一个种子几百集会把追番列表搞乱。
+    # 要合集就把这一行删掉。
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  - name: 主库
+    baseUrl: https://ass.example.com/
+    # apiKey 支持 ${ENV} 写法，避免密钥明文落盘。
+    # 也可以在设置页里直接填，程序会以 0600 权限保存 config.yaml。
+    apiKey: ${ANISYNC_KEY}
+
+# 按番剧规定季度与剧集偏移（和 ANI-RSS 的 Ani.season / Ani.offset 一致）。
+# 留空 = 不碰订阅里已有的值，让 ANI-RSS 按每个 RSS 的实际集数自己推断 —— 多数番剧不需要写。
+targets: []
+
+sync:
+  intervalMinutes: 0    # 后台自动爬取间隔（分钟）；0 = 不自动。托盘模式下生效
+  preview: false        # true = 只生成计划不写入
+  addMissing: false     # targets 里实例没有的番剧是否自动新增
+
+discover:
+  # 自动发现：扫一遍当季在放什么，把实例里没有的补进去。
+  # 打开之后 sync 会顺手加订阅，所以先用只读的 AniSync plan --discover 看一眼。
+  enabled: true
+  # 只用 Yuc 的当季番剧表：它本身就是人工整理的日本番剧表，
+  # Bangumi 只负责补 bgmId（匹配走日文原名，中文译名各家写法不一样，对不上）。
+  sources: [yuc]
+  limit: 50
+  # 新加出来的订阅**默认不启用**，避免一上来就触发下载。
+  # 想直接开始下就改成 true。
+  enable: false

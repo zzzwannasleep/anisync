@@ -72,32 +72,35 @@ Windows 下不带参数双击只打印用法；常驻请执行 `AniSync.exe tray
 
 ## 样例配置
 
-`samples/` 里有四份完整配置，整份复制成 `config.yaml` 改掉 `instances` 就能用：
+`samples/` 里有三份完整配置 —— 追新番只有三种情况，整份复制成 `config.yaml`
+改掉 `instances` 就能用：
 
-| 样例 | 适合谁 |
-| --- | --- |
-| [01-中文优先](samples/01-中文优先.yaml) | 大多数人：简日内嵌 > 简繁内封 > 繁日内嵌，副 RSS 用放流组 |
-| [02-收藏党-蓝光内封](samples/02-收藏党-蓝光内封.yaml) | 等 BD、要软字幕；蓝光/HEVC 10bit 优先，不挡合集 |
-| [03-生肉原声](samples/03-生肉原声.yaml) | 自己压、要日语音轨；生肉/多语优先 |
-| [04-全自动追番](samples/04-全自动追番.yaml) | 想彻底撒手；打开自动发现，每小时自己扫一遍 |
+| 样例 | 主 RSS | 副 RSS | 适合谁 |
+| --- | --- | --- | --- |
+| [01-只追放流](samples/01-只追放流.yaml) | 放流组 | 另一个放流组 | 不要中文字幕，只要第一时间拿到片子 |
+| [02-只要字幕组](samples/02-只要字幕组.yaml) | 字幕组 | 不配 | 只认一家字幕，缺集宁可等 |
+| [03-字幕组加放流](samples/03-字幕组加放流.yaml) | 字幕组 / 压制组 | 放流组 | 想要中文字幕，又不愿意为了等字幕组漏集 |
 
-[samples/groups.md](samples/groups.md) 是按真实发布数据统计出来的组清单（谁在发、发什么语言、
-什么封装、哪些是生肉搬运），改 `rules.primary` 之前先在这里查组名的准确写法。
-
-白名单与黑名单是**单独的文件**，主配置只留引用（复制时三个文件一起拿，放同一个目录）：
+组名单与黑名单是**单独的文件**，主配置只留引用（复制时一起拿，放同一个目录）：
 
 | 文件 | 是什么 |
 | --- | --- |
-| [samples/standby.yaml](samples/standby.yaml) | 白名单：副 RSS 的放流组排名，顺序就是优先级 |
-| [samples/standby-raw.yaml](samples/standby-raw.yaml) | 白名单变体：生肉向排序 |
+| [samples/subs.yaml](samples/subs.yaml) | 字幕组 / 压制组排名，`scope: main` |
+| [samples/raws.yaml](samples/raws.yaml) | 放流组排名，`scope: both`，priority 从 300 起 |
 | [samples/deny.yaml](samples/deny.yaml) | 黑名单：明确不要的组 |
 
 ```yaml
 rules:
-  maxStandby: 1                  # 保留几条副 RSS；默认 1
-  primaryFiles: [standby.yaml]   # 白名单
-  denyFiles: [deny.yaml]         # 黑名单
+  maxStandby: 1                            # 保留几条副 RSS；默认 1
+  primaryFiles: [subs.yaml, raws.yaml]     # 组名单
+  denyFiles: [deny.yaml]                   # 黑名单
 ```
+
+[samples/groups.md](samples/groups.md) 是**组名对照表**：AnimeGarden 注册的全部 727 个组里，
+有 268 个的「种子里的名字」和「显示名」对不上 —— `猎户发布组` 的种子名是 `猎户压制部`，
+`天月動漫發佈組` 是 `Skymoon-Raws`，`亿次研同好会` 是 `Billion Meta Lab`。
+AniSync 的规则同时匹配显示名和资源标题，**只写显示名在 nyaa 上会静默匹配不到**，
+所以改 `rules` 之前先去查这张表。
 
 [samples/README.md](samples/README.md) 讲了怎么挑、怎么改，以及怎么把样例丢给 AI 帮你改。
 
@@ -119,7 +122,7 @@ rules:
     - {name: 简日内嵌, match: '(?i)简日|CHS', priority: 10, scope: main}
     - {name: 桜都字幕组, match: '(?i)sakurato|桜都', priority: 40, scope: main}
     # 副 RSS 的放流组排名放到白名单文件里，见下面的 primaryFiles
-  primaryFiles: [standby.yaml]   # 白名单：副 RSS 只放这里点过名的组
+  primaryFiles: [subs.yaml, raws.yaml]   # 组名单：字幕组走 main，放流组走 both
   denyFiles: [deny.yaml]         # 黑名单：命中即剔除
   deny:
     - {match: '合集|BDRip', why: 不要合集}   # 个人口味留在主配置里
