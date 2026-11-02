@@ -31,14 +31,38 @@ import (
 //go:embed assets/index.html assets/*.svg
 var assets embed.FS
 
+// SyncResult 是一次同步的结果，形状与 /api/sync 的响应一致。
+type SyncResult struct {
+	Updated int
+	Added   int
+	Errors  []string
+	Plan    *planner.Plan
+}
+
+// SyncFunc 是常驻进程注入的同步入口。
+//
+// 为什么需要注入：设置页的「立即同步」和后台定时那一轮都在写同一批实例，
+// 而 ANI-RSS 的 setAni 是全量覆盖 —— 两条路径各自算一份目标状态再各自写回，
+// 结果是在两个值之间反复横跳。注入之后它们排同一把锁、共用同一份租约。
+type SyncFunc func(ctx context.Context) (SyncResult, error)
+
 // Server 是设置页服务。
 type Server struct {
 	mu  sync.Mutex
 	cfg *config.Config
+	// syncFn 为空时（`AniSync serve` 这种纯设置页模式）走本包自己的同步逻辑。
+	syncFn SyncFunc
 }
 
 // New 创建服务。
 func New(cfg *config.Config) *Server { return &Server{cfg: cfg} }
+
+// SetSyncFunc 注入同步入口；常驻进程启动时调用。
+func (s *Server) SetSyncFunc(fn SyncFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.syncFn = fn
+}
 
 // ListenAndServe 启动服务。
 func (s *Server) ListenAndServe(addr string) error {
@@ -149,7 +173,31 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	cfg := s.cfg
+	injected := s.syncFn
 	s.mu.Unlock()
+
+	// 常驻进程里必须走注入的那一条：它和后台定时任务共用写锁与租约。
+	if injected != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+		defer cancel()
+		result, err := injected(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"updated": result.Updated,
+				"added":   result.Added,
+				"errors":  append(result.Errors, err.Error()),
+				"plan":    result.Plan,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated": result.Updated,
+			"added":   result.Added,
+			"errors":  result.Errors,
+			"plan":    result.Plan,
+		})
+		return
+	}
 
 	if err := cfg.Validate(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})

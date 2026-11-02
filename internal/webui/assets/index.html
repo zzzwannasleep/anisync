@@ -285,7 +285,11 @@ svg.i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-widt
 @keyframes row-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
 @keyframes row-out{to{opacity:0;transform:translateY(-4px)}}
 
-.inst{grid-template-columns:minmax(120px,1fr) minmax(180px,1.5fr) minmax(160px,1.4fr) auto auto}
+/* 实例行多了一列「方案」。实例是「谁在用」，方案是「怎么用」，
+   两个字段并排放，用户不用在两块面板之间来回对。
+   118px 是按最长那个选项（默认（顶层 rules））定的：选项文字比这一列宽的时候，
+   浏览器会把文字裁掉而不换行，只留下「默认（顶层 r」这种残句。 */
+.inst{grid-template-columns:minmax(110px,1fr) minmax(150px,1.4fr) minmax(140px,1.3fr) 168px auto auto}
 .rule{grid-template-columns:minmax(110px,.8fr) minmax(190px,1.6fr) 72px 88px 96px 104px auto}
 .target{grid-template-columns:minmax(140px,1.4fr) 108px 64px 84px 84px 108px 52px auto}
 .deny{grid-template-columns:1fr 150px auto}
@@ -363,6 +367,27 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .chip[aria-pressed="true"]{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-bright)}
 .chip .ord{font:11px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--text-3)}
 .chip[aria-pressed="true"] .ord{color:var(--accent-bright)}
+
+/* ---------- 订阅方案 ----------
+   一个方案 = 一套规则 + 站点顺序 + 它引用的外置文件，横向一行装不下，
+   所以它不是 .row 而是一张卡：卡里再分「规则 / 排除 / 外置文件 / 站点」四段。
+   卡片之间只隔 .list 那 2px，靠 1px 边框分组 —— 用大间距分组的话，方案一多
+   页面就散成一堆互不相干的块，看不出它们同属一节。 */
+.profile{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-3);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+/* 进出场复用 .row 那套 keyframes。removeRow() 是靠 animationend 收尾的，
+   卡片不接这两个动画的话，「删除方案」点了不报错也不生效 —— 静默失效最难查。 */
+.profile.enter{animation:row-in var(--motion-base) var(--ease)}
+.profile.leave{animation:row-out var(--motion-fast) var(--ease) forwards}
+.profile-head{display:flex;align-items:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.profile-head .name{flex:0 1 200px;min-width:150px}
+/* fileRules 是只读事实：这套方案引用了哪几个外置文件、各几条。
+   放在方案名旁边，改 primaryFiles / denyFiles 时不用滚回顶部对一遍。 */
+.profile-files{flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--text-3)}
+.profile-block{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+/* 段落小标题比 .field 的标签低一档：它标的是分组，不是某个控件的名字 */
+.profile-block > h3{margin:0;font-size:11px;font-weight:400;letter-spacing:.02em;color:var(--text-3)}
+.profile-sub{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 
 .switch{display:inline-flex;align-items:center;gap:9px;color:var(--text-2);cursor:pointer;transition:color var(--motion-fast) var(--ease)}
 .switch:hover{color:var(--text)}
@@ -634,6 +659,7 @@ td.act{white-space:nowrap}
       <a class="nav-item" href="#p-network" data-target="p-network" data-title="网络与代理" title="网络与代理"><svg class="i"><use href="#i-globe"/></svg><span class="lbl">网络与代理</span></a>
       <a class="nav-item" href="#p-rules" data-target="p-rules" data-title="规则" title="规则"><svg class="i"><use href="#i-filter"/></svg><span class="lbl">规则</span><span class="n" id="nRules">0</span></a>
       <a class="nav-item" href="#p-deny" data-target="p-deny" data-title="排除" title="排除"><svg class="i"><use href="#i-ban"/></svg><span class="lbl">排除</span><span class="n" id="nDeny">0</span></a>
+      <a class="nav-item" href="#p-profiles" data-target="p-profiles" data-title="订阅方案" title="订阅方案"><svg class="i"><use href="#i-panel"/></svg><span class="lbl">订阅方案</span><span class="n" id="nProfiles">0</span></a>
       <a class="nav-item" href="#p-offsets" data-target="p-offsets" data-title="季度与偏移" title="季度与偏移"><svg class="i"><use href="#i-shift"/></svg><span class="lbl">季度与偏移</span><span class="n" id="nTargets">0</span></a>
       <a class="nav-item" href="#p-sync" data-target="p-sync" data-title="同步与后台" title="同步与后台"><svg class="i"><use href="#i-sync"/></svg><span class="lbl">同步与后台</span></a>
       <a class="nav-item" href="#p-discover" data-target="p-discover" data-title="本季新番" title="本季新番"><svg class="i"><use href="#i-eye"/></svg><span class="lbl">本季新番</span><span class="n" id="nDiscover">关</span></a>
@@ -666,8 +692,8 @@ td.act{white-space:nowrap}
 
       <section class="panel" id="p-instances" aria-labelledby="h-instances">
         <div class="panel-head"><h2 id="h-instances">ANI-RSS 实例</h2></div>
-        <p class="lede">同步时下面所有启用的实例一起生效。密钥可以写 <code>${ENV_NAME}</code>，不必明文落盘。</p>
-        <div class="row row-head inst"><span>名字</span><span>地址</span><span>API Key</span><span></span><span></span></div>
+        <p class="lede">同步时下面所有启用的实例一起生效。密钥可以写 <code>${ENV_NAME}</code>，不必明文落盘。方案决定这个实例按哪套规则跑，留空就用顶层的「规则 / 排除」。</p>
+        <div class="row row-head inst"><span>名字</span><span>地址</span><span>API Key</span><span>方案</span><span></span><span></span></div>
         <div class="list" id="instances"></div>
         <div class="panel-foot">
           <button class="btn" onclick="addInstance()" aria-label="添加实例"><svg class="i"><use href="#i-plus"/></svg>添加实例</button>
@@ -715,6 +741,18 @@ td.act{white-space:nowrap}
           <label class="field inline"><span>每个订阅最多留几条副 RSS</span><input class="input" type="number" id="maxStandby" min="0" max="20" placeholder="1" aria-label="每个订阅最多保留几条副 RSS"></label>
           <span class="spacer"></span>
           <button class="btn save-btn js-save" data-panel="p-deny" onclick="save(this)" aria-label="保存排除规则"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
+        </div>
+      </section>
+
+      <section class="panel" id="p-profiles" aria-labelledby="h-profiles">
+        <div class="panel-head"><h2 id="h-profiles">订阅方案</h2></div>
+        <p class="lede">一个方案 = 一套规则 + 它想用哪些站点。实例上面挂方案，不挂就用顶层的「规则 / 排除」。没填名字的方案不会写进配置。</p>
+        <div class="list" id="profiles"></div>
+        <div class="panel-foot">
+          <button class="btn" onclick="addProfile()" aria-label="添加订阅方案"><svg class="i"><use href="#i-plus"/></svg>添加方案</button>
+          <span class="note">站点按勾选顺序生效；方案里留空的副 RSS 上限跟顶层一致。</span>
+          <span class="spacer"></span>
+          <button class="btn save-btn js-save" data-panel="p-profiles" onclick="save(this)" aria-label="保存订阅方案"><span class="dirty-dot" aria-hidden="true"></span><svg class="i"><use href="#i-check"/></svg><span>保存</span></button>
         </div>
       </section>
 
@@ -1083,6 +1121,9 @@ async function load() {
   cfg.sync = cfg.sync || {};
   cfg.targets = cfg.targets || [];
   cfg.instances = cfg.instances || [];
+  // profiles 带 omitempty：一条方案都没有时服务端根本不发这个键。
+  // 这里补一个空数组，后面每个渲染点就能直接遍历，不用到处判空。
+  cfg.profiles = cfg.profiles || [];
   const p = $('cfgPath');
   p.textContent = data.path || '';
   p.title = data.path || '';
@@ -1117,6 +1158,7 @@ function render() {
       <input class="input" aria-label="实例名" value="${esc(inst.name || '')}" placeholder="主库" oninput="cfg.instances[${i}].name=this.value">
       <input class="input mono" aria-label="实例地址" value="${esc(inst.baseUrl || '')}" placeholder="https://ass.example.com/" oninput="cfg.instances[${i}].baseUrl=this.value">
       <input class="input mono" aria-label="实例 API Key" value="${esc(inst.apiKey || '')}" placeholder="API Key 或 \${ENV_NAME}" oninput="cfg.instances[${i}].apiKey=this.value">
+      <select class="input js-profile" aria-label="实例 ${esc(inst.name || i + 1)} 用的订阅方案" onchange="setInstanceProfile(${i}, this.value)">${profileOptions(inst.profile || '')}</select>
       <button class="btn" onclick="testInstance(${i})" aria-label="测试实例 ${esc(inst.name || i + 1)} 的连通性"><svg class="i"><use href="#i-plug"/></svg>测试</button>
       <button class="btn icon danger" onclick="delInstance(${i})" aria-label="删除实例 ${esc(inst.name || i + 1)}"><svg class="i"><use href="#i-trash"/></svg></button>`;
     box.appendChild(row);
@@ -1228,6 +1270,9 @@ function render() {
     targets.innerHTML = '<div class="empty"><svg><use href="#i-search"/></svg><p>还没有番剧级配置</p><p class="note">点「添加番剧」搜 Bangumi，选中就会带上 bgmId。</p></div>';
   }
   $('nTargets').textContent = cfg.targets.length;
+
+  renderProfiles();
+  $('nProfiles').textContent = (cfg.profiles || []).length;
 }
 
 /* ---------- 增删 ---------- */
@@ -1258,6 +1303,308 @@ function addTarget() {
   render(); revealRow('targets', cfg.targets.length - 1); markDirty('p-offsets');
 }
 function delTarget(i) { markDirty('p-offsets'); removeRow('targets', i, () => cfg.targets.splice(i, 1)); }
+
+/* ---------- 订阅方案 ----------
+   方案是「实例怎么用」这一维：实例上挂一个名字，那个实例就按这套规则跑。
+   界面三层与配置三层一一对应：profiles[] → 每套 rules + sources.order，
+   外加只读的 fileRules（它说那几个文件在磁盘上，界面里改不了）。
+
+   所有写入都直接落在 cfg 上，不另建一份「只含已知字段」的对象 ——
+   collect() 回传的就是这个 cfg，换成新对象会把用户配置里别的键洗掉
+   （discover.days、sources.instance…）。规则表这条性质照抄到方案表。 */
+
+// 方案下拉的选项。值空串 = 用顶层 rules，也就是分方案之前的老行为。
+function profileOptions(selected) {
+  const named = (cfg.profiles || []).filter((p) => String(p.name || '').trim() !== '');
+  let out = '<option value=""' + (selected ? '' : ' selected') + '>默认（顶层 rules）</option>';
+  out += named.map((p) => `<option value="${esc(p.name)}"${p.name === selected ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  // 实例上挂着一个方案列表里没有的名字（方案被删了，或者刚改名还没保存）：
+  // 原样列出来并标明来历。悄悄回落成「默认」就是替用户改配置 ——
+  // 他点一次保存，那个名字就真没了，界面上一个字都不会提示。
+  if (selected && !named.some((p) => p.name === selected)) {
+    out += `<option value="${esc(selected)}" selected>${esc(selected)}（方案还没定义）</option>`;
+  }
+  return out;
+}
+
+function setInstanceProfile(i, value) {
+  // 选「默认」时把键删掉，而不是写空串：Instance.Profile 带 omitempty，
+  // 空串虽然也不落盘，但 GET 回来的对象会一直挂着 "profile": ""，
+  // 看配置的人会以为这个实例挂着一个名字叫空的方案。
+  if (value) cfg.instances[i].profile = value;
+  else delete cfg.instances[i].profile;
+}
+
+// 只重画实例行里的方案下拉，不整页重绘：改名时整页重绘会把焦点从
+// 「方案名」输入框里拽走，改一个字掉出去一次，那输入框就没法用了。
+function syncProfileOptions() {
+  const box = $('instances');
+  (cfg.instances || []).forEach((inst, i) => {
+    const row = box.children[i];
+    const sel = row && row.querySelector('.js-profile');
+    if (sel) sel.innerHTML = profileOptions(inst.profile || '');
+  });
+}
+
+// 每行一个文件名。空格是文件名的一部分（Windows 路径里很常见），
+// 所以只按换行切，不像 splitList 那样连逗号空格一起切。
+// 空列表交 undefined，让 JSON.stringify 直接丢掉这个键 ——
+// 写个 [] 落盘会变成 primaryFiles: []，配置里多一行什么也没说的空字段。
+function fileList(raw) {
+  const list = String(raw).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : undefined;
+}
+
+// 方案卡标题旁边那串 fileRules（只读）。它回答的是「这套方案吃进了哪些外置
+// 文件、各几条」：改完 primaryFiles 但文件读不出来，只有这里会立刻露出 0 条。
+function profileFilesHtml(p) {
+  const files = p.fileRules || [];
+  if (!files.length) return '<span class="note">未引用外置规则文件</span>';
+  return '<span class="note">外置文件</span>' + files.map((f) =>
+    `<span class="tag" title="${esc(f.path)}">${esc(f.kind)} · ${f.count} 条 · ${esc(String(f.path).split(/[\\/]/).pop())}</span>`).join('');
+}
+
+function profileRuleRowHtml(pi, ri, rule, who) {
+  return `
+        <div class="row rule" role="group" aria-label="${who} 的第 ${ri + 1} 条规则">
+          <input class="input" aria-label="${who} 的规则名称" value="${esc(rule.name || '')}" placeholder="简日内嵌" oninput="cfg.profiles[${pi}].rules.primary[${ri}].name=this.value">
+          <input class="input mono" aria-label="${who} 的规则正则" value="${esc(rule.match || '')}" placeholder="(?i)简日|CHS" oninput="cfg.profiles[${pi}].rules.primary[${ri}].match=this.value">
+          <input class="input" type="number" aria-label="${who} 的规则优先级" value="${rule.priority ?? 10}" placeholder="10" oninput="cfg.profiles[${pi}].rules.primary[${ri}].priority=Number(this.value)">
+          <select class="input" aria-label="${who} 的规则作用域" onchange="cfg.profiles[${pi}].rules.primary[${ri}].scope=this.value">
+            <option value="main" ${(rule.scope || 'main') === 'main' ? 'selected' : ''}>主 RSS</option>
+            <option value="standby" ${rule.scope === 'standby' ? 'selected' : ''}>副 RSS</option>
+            <option value="both" ${rule.scope === 'both' ? 'selected' : ''}>两者</option>
+          </select>
+          <select class="input" aria-label="${who} 的规则匹配对象" onchange="cfg.profiles[${pi}].rules.primary[${ri}].in=this.value">
+            <option value="any" ${!rule.in || rule.in === 'any' ? 'selected' : ''}>组名+标题</option>
+            <option value="group" ${rule.in === 'group' ? 'selected' : ''}>组名</option>
+            <option value="title" ${rule.in === 'title' ? 'selected' : ''}>标题</option>
+          </select>
+          <select class="input" aria-label="${who} 的规则限定站点" onchange="cfg.profiles[${pi}].rules.primary[${ri}].site=this.value">
+            <option value="">不限站点</option>
+            ${sources.map((s) => `<option value="${s.id}" ${rule.site === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+            ${legacySiteOption(rule.site)}
+          </select>
+          <button class="btn icon danger" onclick="delProfileRule(${pi}, ${ri})" aria-label="删除${who}的第 ${ri + 1} 条规则"><svg class="i"><use href="#i-trash"/></svg></button>
+        </div>`;
+}
+
+function profileDenyRowHtml(pi, di, rule, who) {
+  return `
+        <div class="row deny" role="group" aria-label="${who} 的第 ${di + 1} 条排除规则">
+          <input class="input mono" aria-label="${who} 的排除正则" value="${esc(rule.match || '')}" placeholder="合集|BDRip" oninput="cfg.profiles[${pi}].rules.deny[${di}].match=this.value">
+          <input class="input" aria-label="${who} 的排除备注" value="${esc(rule.why || '')}" placeholder="不要合集" oninput="cfg.profiles[${pi}].rules.deny[${di}].why=this.value">
+          <button class="btn icon danger" onclick="delProfileDeny(${pi}, ${di})" aria-label="删除${who}的第 ${di + 1} 条排除规则"><svg class="i"><use href="#i-trash"/></svg></button>
+        </div>`;
+}
+
+function siteChipHtml(pi, id, label, order) {
+  const at = order.indexOf(id);
+  // 序号就是顺序本身：勾上的显示它在 sources.order 里的位次，没勾的显示「—」。
+  // 状态不靠颜色表达 —— 读屏拿到的是 aria-pressed，眼睛看到的是那个数字。
+  return `<button type="button" class="chip" aria-pressed="${at >= 0}" data-site="${esc(id)}" onclick="toggleProfileSite(${pi}, this.dataset.site)" title="${esc(label)}"><span class="ord">${at >= 0 ? at + 1 : '—'}</span><span>${esc(label)}</span></button>`;
+}
+
+function siteChipsHtml(pi) {
+  const order = ((cfg.profiles[pi] || {}).sources || {}).order || [];
+  const known = sources.map((s) => s.id);
+  const chips = sources.map((s) => siteChipHtml(pi, s.id, s.name, order));
+  // 配置里可能写着界面不再提供的站点（animegarden / mikan）：不补出来，
+  // 用户根本看不见这一项，取消别处的时候它们就被静默挤掉了。
+  order.forEach((name) => {
+    if (known.indexOf(name) >= 0) return;
+    chips.push(siteChipHtml(pi, name, name + '（不再提供）', order));
+  });
+  return chips.join('');
+}
+
+// 只更新这一张卡的勾选状态与序号，不重画整块：重画会把焦点从刚点的那个
+// 按钮上带走，键盘用户每勾一次就得重新 Tab 回来一遍。
+function syncProfileSites(pi) {
+  const box = $('pf-' + pi + '-sites');
+  if (!box) return;
+  const order = ((cfg.profiles[pi].sources || {}).order) || [];
+  box.querySelectorAll('.chip[data-site]').forEach((btn) => {
+    const at = order.indexOf(btn.dataset.site);
+    btn.setAttribute('aria-pressed', String(at >= 0));
+    const ord = btn.querySelector('.ord');
+    if (ord) ord.textContent = at >= 0 ? String(at + 1) : '—';
+  });
+}
+
+function toggleProfileSite(pi, site) {
+  const p = cfg.profiles[pi];
+  // 顺序 = 勾选顺序：新勾的排到末尾，取消的从数组里摘掉。
+  // 全取消时把整个 sources 删掉，而不是留个空对象 —— 空 sources 的语义是
+  // 「跟顶层」，留个 `sources: {}` 只会让配置文件里多一段什么也没说的话。
+  const order = ((p.sources || {}).order || []).slice();
+  const at = order.indexOf(site);
+  if (at >= 0) order.splice(at, 1);
+  else order.push(site);
+  if (order.length) {
+    p.sources = p.sources || {};
+    p.sources.order = order;
+  } else {
+    delete p.sources;
+  }
+  syncProfileSites(pi);
+}
+
+function renderProfiles() {
+  const box = $('profiles');
+  const list = cfg.profiles || [];
+  box.innerHTML = '';
+  list.forEach((p, pi) => {
+    p.rules = p.rules || {};
+    p.rules.primary = p.rules.primary || [];
+    p.rules.deny = p.rules.deny || [];
+    const name = String(p.name || '').trim();
+    // who 会进 aria-label / title，必须转义：方案名是用户随手打的，
+    // 里面带个引号就能把后面半张卡变成属性值。
+    const who = '方案 ' + (name ? esc(name) : pi + 1);
+    const card = document.createElement('div');
+    card.className = 'profile';
+    card.setAttribute('role', 'group');
+    card.setAttribute('aria-label', who);
+    card.innerHTML = `
+        <div class="profile-head">
+          <label class="field name"><span>方案名</span>
+            <input class="input" aria-label="方案名" data-orig="${esc(name)}" value="${esc(p.name || '')}" placeholder="追番 / 收藏" onchange="renameProfile(${pi}, this)">
+          </label>
+          <div class="profile-files" role="group" aria-label="${who} 引用的外置规则文件">${profileFilesHtml(p)}</div>
+          <button class="btn icon danger" onclick="delProfile(${pi})" aria-label="删除${who}"><svg class="i"><use href="#i-trash"/></svg></button>
+        </div>
+
+        <div class="profile-block">
+          <h3>规则（主 RSS 的挑选顺序）</h3>
+          <div class="row row-head rule"><span>名称</span><span>正则</span><span>优先级</span><span>作用域</span><span>匹配对象</span><span>限定站点</span><span></span></div>
+          <div class="list" id="pf-${pi}-rules"></div>
+          <div class="profile-sub">
+            <button class="btn" onclick="addProfileRule(${pi})" aria-label="给${who}添加规则"><svg class="i"><use href="#i-plus"/></svg>添加规则</button>
+            <label class="field inline"><span>每个订阅最多留几条副 RSS</span><input class="input" type="number" min="0" max="20" aria-label="${who} 每个订阅最多保留几条副 RSS" placeholder="跟顶层" value="${p.rules.maxStandby || ''}" oninput="cfg.profiles[${pi}].rules.maxStandby=Number(this.value)||0"></label>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <h3>排除（命中即丢弃）</h3>
+          <div class="row row-head deny"><span>正则</span><span>备注</span><span></span></div>
+          <div class="list" id="pf-${pi}-deny"></div>
+          <div class="profile-sub">
+            <button class="btn" onclick="addProfileDeny(${pi})" aria-label="给${who}添加排除"><svg class="i"><use href="#i-plus"/></svg>添加排除</button>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <h3>外置规则文件（一行一个文件名，相对配置文件所在目录）</h3>
+          <div class="grid-2">
+            <label class="field"><span>白名单文件</span><textarea class="input mono" rows="2" aria-label="${who} 的外置白名单文件，一行一个" placeholder="rules-primary.yaml" oninput="cfg.profiles[${pi}].rules.primaryFiles=fileList(this.value)">${esc((p.rules.primaryFiles || []).join('\n'))}</textarea></label>
+            <label class="field"><span>黑名单文件</span><textarea class="input mono" rows="2" aria-label="${who} 的外置黑名单文件，一行一个" placeholder="rules-deny.yaml" oninput="cfg.profiles[${pi}].rules.denyFiles=fileList(this.value)">${esc((p.rules.denyFiles || []).join('\n'))}</textarea></label>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <h3>站点顺序（一个都不勾 = 跟顶层 sources.order）</h3>
+          <div class="profile-sub">
+            <div class="chips" id="pf-${pi}-sites" role="group" aria-label="${who} 的站点顺序">${siteChipsHtml(pi)}</div>
+          </div>
+        </div>`;
+    box.appendChild(card);
+
+    // 规则 / 排除两段等卡片进了 DOM 再填：它们各自要拿自己的容器，
+    // 拼进上面那段 innerHTML 就得把整张卡再解析一遍。
+    const rulesBox = $('pf-' + pi + '-rules');
+    rulesBox.innerHTML = p.rules.primary.map((r, ri) => profileRuleRowHtml(pi, ri, r, who)).join('') ||
+      '<p class="note">还没有规则。没有规则时候选按站点顺序与热度排，第一个当主 RSS。</p>';
+    const denyBox = $('pf-' + pi + '-deny');
+    denyBox.innerHTML = p.rules.deny.map((d, di) => profileDenyRowHtml(pi, di, d, who)).join('') ||
+      '<p class="note">没有排除规则。</p>';
+  });
+
+  if (!list.length) {
+    box.innerHTML = '<div class="empty"><svg><use href="#i-empty"/></svg><p>还没有订阅方案</p><p class="note">加一个方案，不同实例就能跑不同的规则与站点；不建方案时所有实例都用顶层的「规则 / 排除」。</p></div>';
+  }
+}
+
+function addProfile() {
+  cfg.profiles = cfg.profiles || [];
+  // 空壳先留在内存里让用户填名字：collect() 会把没名字的那条滤掉，
+  // 所以「点了添加又没填」不会在配置文件里留一行空方案 ——
+  // 服务端会以「第 N 个方案缺少 name」拒绝整次保存，那比不留还糟。
+  cfg.profiles.push({ name: '', rules: { primary: [], deny: [], maxStandby: 0 } });
+  render();
+  revealRow('profiles', cfg.profiles.length - 1);
+  markDirty('p-profiles');
+}
+
+function delProfile(i) {
+  const name = String((cfg.profiles[i] || {}).name || '').trim();
+  markDirty('p-profiles');
+  removeRow('profiles', i, () => {
+    cfg.profiles.splice(i, 1);
+    // 删方案顺手把挂着它的实例改回默认。留着就是一条「实例挂了一个不存在的
+    // 方案」，服务端校验会整次拒绝保存，而报错只提实例名 —— 用户还得自己翻
+    // 是哪条方案被删了。这里替他把因果接上。
+    let reset = 0;
+    (cfg.instances || []).forEach((inst) => {
+      if (name && inst.profile === name) { delete inst.profile; reset++; }
+    });
+    if (reset) {
+      markDirty('p-instances');
+      toast(`已把 ${reset} 个实例改回默认方案`);
+    }
+  });
+}
+
+// 改名要把挂着旧名字的实例一起带走：否则保存时校验会说「实例 X 挂的方案不存在」，
+// 而用户刚才只是改了个名字。用 onchange（失焦 / 回车）触发，不在每次敲键时动手。
+function renameProfile(i, input) {
+  const prev = input.dataset.orig || '';
+  const next = input.value;
+  const target = next.trim();
+  input.dataset.orig = target;
+  cfg.profiles[i].name = next;
+  if (!prev || prev === target) return;
+  let moved = 0;
+  (cfg.instances || []).forEach((inst) => {
+    if (inst.profile !== prev) return;
+    if (target) inst.profile = target; else delete inst.profile;
+    moved++;
+  });
+  syncProfileOptions();
+  if (moved) {
+    markDirty('p-instances');
+    toast(`方案改名，${moved} 个实例跟着挂过去`);
+  }
+}
+
+function addProfileRule(pi) {
+  const p = cfg.profiles[pi];
+  p.rules = p.rules || {};
+  p.rules.primary = p.rules.primary || [];
+  p.rules.primary.push({ name: '', match: '', priority: 10, scope: 'main', in: 'any', site: '' });
+  const index = p.rules.primary.length - 1;
+  render();
+  revealRow('pf-' + pi + '-rules', index);
+  markDirty('p-profiles');
+}
+function delProfileRule(pi, ri) {
+  markDirty('p-profiles');
+  removeRow('pf-' + pi + '-rules', ri, () => cfg.profiles[pi].rules.primary.splice(ri, 1));
+}
+function addProfileDeny(pi) {
+  const p = cfg.profiles[pi];
+  p.rules = p.rules || {};
+  p.rules.deny = p.rules.deny || [];
+  p.rules.deny.push({ match: '', why: '' });
+  const index = p.rules.deny.length - 1;
+  render();
+  revealRow('pf-' + pi + '-deny', index);
+  markDirty('p-profiles');
+}
+function delProfileDeny(pi, di) {
+  markDirty('p-profiles');
+  removeRow('pf-' + pi + '-deny', di, () => cfg.profiles[pi].rules.deny.splice(di, 1));
+}
 
 /* ---------- 选番弹窗 ----------
    加番剧的常规做法是提前把 bgm 链接贴进来，但手抄链接容易错，
@@ -1526,6 +1873,13 @@ function collect() {
   cfg.sync.offset = optInt('offset');
   cfg.sync.standbyOffset = optInt('standbyOffset');
   cfg.targets = (cfg.targets || []).filter((tg) => !isEmptyTarget(tg));
+  // 空方案不落盘：名字就是方案的身份（实例靠名字挂载），没名字那条没有意义。
+  // 更实际的理由是服务端会以「第 N 个方案缺少 name」拒绝整次保存 ——
+  // 一条没填的空壳能把用户其余所有改动一起挡回去，这种失败最难理解。
+  cfg.profiles = (cfg.profiles || []).filter((p) => {
+    p.name = String(p.name || '').trim();
+    return p.name !== '';
+  });
   cfg.proxy = $('proxy').value.trim();
   cfg.discover = cfg.discover || {};
   cfg.discover.enabled = $('discoverEnabled').checked;

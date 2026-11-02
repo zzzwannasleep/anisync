@@ -131,6 +131,13 @@ func NewRegistry(site *assapi.Client, httpClient *http.Client, timeout time.Dura
 // Order 返回生效的站点顺序。
 func (r *Registry) Order() []string { return r.order }
 
+// KnownSites 返回全部可接入的站点标识。
+//
+// 这份清单的权威版本在 config.KnownSiteNames（校验要用它），
+// 两边如果漂了，配置里写对的站点名会被判成非法、或者写错的被静默丢弃。
+// 一致性由 sites_test.go 守住 —— 靠人记两份清单必然会分叉。
+func KnownSites() []string { return []string{"anibt", "animegarden", "mikan", "nyaa"} }
+
 // SiteResult 记录单个站点的爬取结果，便于在计划里展示「为什么没有候选」。
 type SiteResult struct {
 	Site       string

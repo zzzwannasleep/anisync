@@ -6,7 +6,9 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -56,6 +58,11 @@ type Action struct {
 	// Target 是命中的番剧级配置名（targets 里的 title / bgmId），
 	// 用来在计划里说明「这条订阅的季度与偏移是按哪个番剧规定的」。
 	Target string `json:"target,omitempty"`
+	// Profile 是这条订阅实际生效的方案名；空表示用顶层 rules。
+	//
+	// 单独列出来是因为 targets 可以按番剧覆盖方案：只看实例的话，
+	// 「这条为什么全收了」在计划里查不出来。
+	Profile string `json:"profile,omitempty"`
 
 	body map[string]any // 完整 Ani 对象（update/add 用）
 }
@@ -74,6 +81,8 @@ type Plan struct {
 	Discovered []discover.Item `json:"discovered,omitempty"`
 	// DiscoverNotes 是发现过程的降级信息，例如某个来源挂了但其余来源仍然可用。
 	DiscoverNotes []string `json:"discoverNotes,omitempty"`
+	// Schemes 说明每个实例这次用的是哪套订阅方案。
+	Schemes []SchemeSummary `json:"schemes,omitempty"`
 }
 
 // SiteSummary 记录每个站点在本次计划里的产出，便于排查「为什么没有候选」。
@@ -92,18 +101,24 @@ type SkippedReason struct {
 	Reason   string `json:"reason"`
 }
 
+// SchemeSummary 说明这次计划里每个实例实际用了哪套方案。
+//
+// 无人值守时这是唯一能回答「这个实例到底按哪套口味在跑」的地方：
+// 计划里只有一条条变更，看不出规则来自哪个方案。
+type SchemeSummary struct {
+	Instance   string                `json:"instance"`
+	Profile    string                `json:"profile,omitempty"`
+	MaxStandby int                   `json:"maxStandby"`
+	SiteOrder  []string              `json:"siteOrder"`
+	RuleCount  int                   `json:"ruleCount"`
+	DenyCount  int                   `json:"denyCount"`
+	RuleFiles  []config.RuleFileInfo `json:"ruleFiles,omitempty"`
+}
+
 // Build 生成计划。所有网络访问都是真实的。
 func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error) {
-	if opts.MaxStandby <= 0 {
-		opts.MaxStandby = cfg.Rules.MaxStandby
-	}
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = 4
-	}
-
-	engine, err := buildEngine(cfg, opts.MaxStandby)
-	if err != nil {
-		return nil, err
 	}
 
 	// 站点数据统一由某一个实例提供：它怎么认这些站点，我们就怎么认
@@ -119,15 +134,6 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	store := cache.Open(opts.CachePath, time.Duration(cfg.Sources.CacheMinutes)*time.Minute)
 	defer func() { _ = store.Flush() }()
 
-	registry := source.NewRegistry(siteClient, httpClient.HTTP, timeoutOf(cfg), cfg.Sources.Order, store)
-
-	plan := &Plan{SiteInstance: siteInstance}
-	// 同一番剧在多个实例里重复出现时只爬一次
-	candidateCache := map[string][]source.Candidate{}
-	var cacheMu sync.Mutex
-	siteStats := map[string]*SiteSummary{}
-	var statsMu sync.Mutex
-
 	// 收集所有需要打点的订阅，同时建一份「每个实例里已经有什么」的索引：
 	// 自动发现要靠它判断哪些番剧是真的还没有，不能只看标题（中/日文名对不上会误判）。
 	type job struct {
@@ -136,6 +142,15 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	}
 	var jobs []job
 	existing := newExistingIndex()
+	// 每个启用实例生效的方案。先收集再建 registry / engine：
+	// 这两样都只跟方案有关，跑之前就能固定下来，不必在并发里加锁懒建。
+	schemeByInstance := map[string]config.Scheme{}
+	for _, instance := range cfg.Instances {
+		if !instance.IsEnabled() {
+			continue
+		}
+		schemeByInstance[instance.Name] = cfg.SchemeFor(instance.Name)
+	}
 	for _, instance := range cfg.Instances {
 		if !instance.IsEnabled() {
 			continue
@@ -161,6 +176,30 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 		}
 	}
 
+	b, err := newBuilder(cfg, opts, store, siteClient, httpClient, schemeByInstance)
+	if err != nil {
+		return nil, err
+	}
+
+	plan := &Plan{SiteInstance: siteInstance}
+	for _, instance := range cfg.Instances {
+		if !instance.IsEnabled() {
+			continue
+		}
+		scheme := schemeByInstance[instance.Name]
+		plan.Schemes = append(plan.Schemes, SchemeSummary{
+			Instance:   instance.Name,
+			Profile:    scheme.Name,
+			MaxStandby: b.maxStandbyOf(scheme),
+			SiteOrder:  scheme.SourceOrder,
+			// 报实际会参与匹配的条数：空的 match 会被 rules.New 跳过，
+			// 报总条数会让人以为配了 3 条、其实只有 1 条生效。
+			RuleCount: scheme.EffectivePrimary(),
+			DenyCount: scheme.EffectiveDeny(),
+			RuleFiles: scheme.RuleFiles,
+		})
+	}
+
 	// 并发爬取
 	sem := make(chan struct{}, opts.Concurrency)
 	var wg sync.WaitGroup
@@ -176,12 +215,11 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			action := planOne(ctx, cfg, engine, registry, item.instance, item.ani, opts,
-				candidateCache, &cacheMu, siteStats, &statsMu)
+			action := b.planOneGuarded(ctx, item.instance, item.ani)
 			mu.Lock()
 			defer mu.Unlock()
 			if action.Kind == "error" {
-				skipped = append(skipped, SkippedReason{Instance: item.instance.Name, Title: titleOf(item.ani), Reason: action.Reason})
+				skipped = append(skipped, SkippedReason{Instance: item.instance.Name, Title: action.Title, Reason: action.Reason})
 				return
 			}
 			results = append(results, action)
@@ -273,7 +311,7 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 				addSem <- struct{}{}
 				defer func() { <-addSem }()
 
-				action := planTarget(ctx, cfg, engine, registry, item.instance, item.target, candidateCache, &cacheMu)
+				action := b.planTargetGuarded(ctx, item.instance, item.target)
 				if action == nil {
 					return
 				}
@@ -305,8 +343,10 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 
 	plan.Actions = results
 	plan.Skipped = skipped
-	for _, name := range registry.Order() {
-		summary := siteStats[name]
+	for _, name := range b.siteOrder() {
+		b.statsMu.Lock()
+		summary := b.stats[name]
+		b.statsMu.Unlock()
 		if summary == nil {
 			summary = &SiteSummary{Site: name}
 		}
@@ -315,9 +355,195 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	return plan, nil
 }
 
-func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, registry *source.Registry,
-	instance config.Instance, ani assapi.Ani, opts Options, cache map[string][]source.Candidate,
-	cacheMu *sync.Mutex, siteStats map[string]*SiteSummary, statsMu *sync.Mutex) Action {
+// builder 把一次 Build 里的共享物收在一处：每个方案的规则引擎、站点注册表、
+// 候选缓存与统计。放进结构体是因为这些参数已经在 planOne 上堆到八个了。
+type builder struct {
+	cfg  *config.Config
+	opts Options
+
+	siteClient *assapi.Client
+	httpClient *assapi.Client
+
+	engines map[string]*rules.Engine    // 方案名 -> 引擎（"" 是默认方案）
+	regists map[string]*source.Registry // 站点顺序签名 -> 注册表
+
+	memoMu sync.Mutex
+	memo   map[string][]source.Candidate // 签名|查询 -> 候选
+	// inflight 记录正在爬的键，避免同一番剧被并发打多份。
+	//
+	// 没有它的时候，两个实例同时处理同一个番剧会各自判定「缓存里没有」、
+	// 各自去爬一遍：多实例场景下每个番剧的站点请求数等于实例数。
+	// 这既是浪费，也更容易撞上游限流。
+	inflight map[string]*inflightCall
+
+	statsMu sync.Mutex
+	stats   map[string]*SiteSummary
+
+	orderMu sync.Mutex
+	orders  []string
+}
+
+func newBuilder(cfg *config.Config, opts Options, store *cache.Store, siteClient, httpClient *assapi.Client, schemes map[string]config.Scheme) (*builder, error) {
+	b := &builder{
+		cfg:        cfg,
+		opts:       opts,
+		siteClient: siteClient,
+		httpClient: httpClient,
+		engines:    map[string]*rules.Engine{},
+		regists:    map[string]*source.Registry{},
+		memo:       map[string][]source.Candidate{},
+		inflight:   map[string]*inflightCall{},
+		stats:      map[string]*SiteSummary{},
+	}
+	// 默认方案也要建：没挂方案的实例走它。
+	// 另外把**所有**方案都建一遍，而不只是当前挂到实例上的那些：
+	// targets 可以给单个番剧覆盖方案，那套方案未必挂在任何实例上。
+	all := []config.Scheme{cfg.SchemeForProfile("")}
+	for i := range cfg.Profiles {
+		all = append(all, cfg.SchemeForProfile(cfg.Profiles[i].Name))
+	}
+	for _, name := range sortedSchemeNames(schemes) {
+		all = append(all, schemes[name])
+	}
+	built := map[string]bool{}
+	for _, scheme := range all {
+		if built[scheme.Name] {
+			continue
+		}
+		built[scheme.Name] = true
+		if _, ok := b.engines[scheme.Name]; !ok {
+			engine, err := buildEngine(scheme, b.maxStandbyOf(scheme))
+			if err != nil {
+				// 这里**不能**兜成空引擎。空引擎的后果是：黑名单全部失效、
+				// 所有候选同档按热度排、副 RSS 因为没人被点名而被清空 ——
+				// 也就是说一次静默的错误会把主副 RSS 一起换成错的，而且照样写回实例。
+				// 校验阶段本应拦下非法正则；走到这里说明有调用点绕过了 Validate，
+				// 那就当场失败，让调用方看见。
+				label := scheme.Name
+				if label == "" {
+					label = "默认方案（顶层 rules）"
+				}
+				return nil, fmt.Errorf("%s的规则无法编译（配置没过校验？）: %w", label, err)
+			}
+			b.engines[scheme.Name] = engine
+		}
+		key := orderKey(scheme.SourceOrder)
+		if _, ok := b.regists[key]; !ok {
+			registry := source.NewRegistry(siteClient, httpClient.HTTP, timeoutOf(cfg), scheme.SourceOrder, store)
+			b.regists[key] = registry
+			b.orderMu.Lock()
+			b.orders = append(b.orders, key)
+			b.orderMu.Unlock()
+		}
+	}
+	// 兜底：一个实例都没有时也要有一张注册表，否则 plan 直接空转。
+	if len(b.regists) == 0 {
+		registry := source.NewRegistry(siteClient, httpClient.HTTP, timeoutOf(cfg), cfg.Sources.Order, store)
+		b.regists[orderKey(cfg.Sources.Order)] = registry
+	}
+	return b, nil
+}
+
+// maxStandbyOf 取生效的副 RSS 上限：命令行覆盖优先，其次方案自己的值。
+func (b *builder) maxStandbyOf(scheme config.Scheme) int {
+	if b.opts.MaxStandby > 0 {
+		return b.opts.MaxStandby
+	}
+	if scheme.MaxStandby > 0 {
+		return scheme.MaxStandby
+	}
+	return 1
+}
+
+// forScheme 取某个番剧要用的引擎、注册表与副 RSS 上限。
+//
+// profile 非空表示「这条订阅按 targets 覆盖了方案」，此时以覆盖为准：
+// 番剧级覆盖的意义就是「这一次别按实例那套来」。
+func (b *builder) forScheme(profile, instanceName string) (*rules.Engine, *source.Registry, string, int) {
+	var scheme config.Scheme
+	if profile != "" {
+		scheme = b.cfg.SchemeForProfile(profile)
+	} else {
+		scheme = b.cfg.SchemeFor(instanceName)
+	}
+	engine := b.engines[scheme.Name]
+	if engine == nil {
+		engine = b.engines[""]
+	}
+	key := orderKey(scheme.SourceOrder)
+	registry := b.regists[key]
+	if registry == nil {
+		for _, candidate := range b.regists {
+			registry = candidate
+			break
+		}
+	}
+	return engine, registry, registryKey(registry), b.maxStandbyOf(scheme)
+}
+
+// siteOrder 返回要写进计划里的站点清单（按注册表的实际生效顺序，去重）。
+func (b *builder) siteOrder() []string {
+	b.orderMu.Lock()
+	defer b.orderMu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, key := range b.orders {
+		registry := b.regists[key]
+		if registry == nil {
+			continue
+		}
+		for _, name := range registry.Order() {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 {
+		for _, name := range config.DefaultSourceOrder {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// planOneGuarded 兜住 planOne 的 panic。
+//
+// 常驻进程里一个订阅把某条规则喂炸（比如正则回溯炸栈），
+// 未捕获的 panic 会带走整个进程 —— 无人值守时这意味着「再也不会自己跑」，
+// 而且没有任何提示。所以这里必须变成一个「这条跳过」。
+func (b *builder) planOneGuarded(ctx context.Context, instance config.Instance, ani assapi.Ani) (action Action) {
+	defer func() {
+		if r := recover(); r != nil {
+			action = Action{
+				Instance: instance.Name,
+				AniID:    stringField(ani, "id"),
+				Title:    titleOf(ani),
+				Kind:     "error",
+				Reason:   fmt.Sprintf("内部错误（已跳过这一条）: %v", r),
+			}
+		}
+	}()
+	return b.planOne(ctx, instance, ani)
+}
+
+func (b *builder) planTargetGuarded(ctx context.Context, instance config.Instance, target config.Target) (action *Action) {
+	defer func() {
+		if r := recover(); r != nil {
+			action = &Action{
+				Instance: instance.Name,
+				Title:    firstNonEmpty(target.Title, target.JPTitle, target.BgmID),
+				Kind:     "error",
+				Reason:   fmt.Sprintf("内部错误（已跳过这一条）: %v", r),
+			}
+		}
+	}()
+	return b.planTarget(ctx, instance, target)
+}
+
+func (b *builder) planOne(ctx context.Context, instance config.Instance, ani assapi.Ani) Action {
+	cfg := b.cfg
 
 	action := Action{Instance: instance.Name, AniID: stringField(ani, "id"), Title: titleOf(ani), Kind: "noop"}
 	if action.AniID == "" {
@@ -332,6 +558,13 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 	if target != nil {
 		action.Target = targetLabel(*target)
 	}
+	// 番剧级覆盖方案：这一条按 target 上写的方案挑，不按实例那套。
+	override := ""
+	if target != nil {
+		override = target.Profile
+	}
+	engine, registry, regKey, maxStandby := b.forScheme(override, instance.Name)
+	action.Profile = schemeLabel(b.cfg, override, instance.Name)
 
 	query := queryOf(ani)
 	if query.BgmID == "" && query.MikanID == "" && query.Title == "" {
@@ -340,7 +573,7 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 		return action
 	}
 
-	candidates := collect(ctx, registry, query, cfg.Sources.StopOnFirstMatch, cache, cacheMu, siteStats, statsMu)
+	candidates := b.collect(ctx, regKey, registry, query, cfg.Sources.StopOnFirstMatch)
 	ranked := engine.Rank(candidates)
 	if len(ranked) == 0 {
 		action.Kind = "error"
@@ -350,6 +583,9 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 
 	primary := ranked[0]
 	standby := engine.Standby(ranked[1:])
+	if maxStandby < len(standby) {
+		standby = standby[:maxStandby]
+	}
 
 	off := offsetsOf(cfg, target)
 	// 备用 RSS 列表每次都要整体重建，但 offset 不能跟着一起重置：
@@ -370,8 +606,9 @@ func planOne(ctx context.Context, cfg *config.Config, engine *rules.Engine, regi
 	return action
 }
 
-func planTarget(ctx context.Context, cfg *config.Config, engine *rules.Engine, registry *source.Registry,
-	instance config.Instance, target config.Target, cache map[string][]source.Candidate, cacheMu *sync.Mutex) *Action {
+func (b *builder) planTarget(ctx context.Context, instance config.Instance, target config.Target) *Action {
+	cfg := b.cfg
+	engine, registry, _, maxStandby := b.forScheme(target.Profile, instance.Name)
 
 	// 站点查询：bgmId 是最可靠的锚点（AniBT / AnimeGarden 都要它）；
 	// Nyaa 只认日文/罗马音，所以搜索词优先用日文原名，中文名在那边搜不到东西。
@@ -383,12 +620,16 @@ func planTarget(ctx context.Context, cfg *config.Config, engine *rules.Engine, r
 		NyaaQuery: firstNonEmpty(target.JPTitle, target.Title),
 	}
 	results := registry.Collect(ctx, query, cfg.Sources.StopOnFirstMatch)
+	b.recordStats(results)
 	ranked := engine.Rank(source.AllCandidates(results))
 	if len(ranked) == 0 {
 		return nil
 	}
 	primary := ranked[0]
 	standby := engine.Standby(ranked[1:])
+	if maxStandby < len(standby) {
+		standby = standby[:maxStandby]
+	}
 
 	enable := false
 	if target.Enable != nil {
@@ -442,34 +683,92 @@ func planTarget(ctx context.Context, cfg *config.Config, engine *rules.Engine, r
 		Kind:     "add",
 		Reason:   "实例中没有该订阅，按规则新建（默认不启用，避免触发下载）",
 		Changes:  changes,
-		body:     draft,
+		// 新增订阅同样要交代方案：不写的话 plan --json 里这一条没有 profile，
+		// 「这条为什么按全收挑的」就查不出来。
+		Profile: schemeLabel(cfg, target.Profile, instance.Name),
+		body:    draft,
 	}
 }
 
-func collect(ctx context.Context, registry *source.Registry, query source.Query, stopOnFirst bool,
-	cache map[string][]source.Candidate, cacheMu *sync.Mutex, siteStats map[string]*SiteSummary, statsMu *sync.Mutex) []source.Candidate {
+// inflightCall 是一次正在进行的爬取，其余同一个键的等待者会在 done 上等它。
+type inflightCall struct {
+	done chan struct{}
+	val  []source.Candidate
+	// err 是 leader 崩掉时留下的原因。等待者要拿到它，否则会被记成
+	// 「按规则没有可用候选（爬取到 0 个）」—— 那会把人引去查站点，
+	// 而真相是同番剧的另一条订阅把爬取搞崩了。
+	err any
+}
 
-	key := query.BgmID + "|" + query.MikanID + "|" + query.Title
-	cacheMu.Lock()
-	if cached, ok := cache[key]; ok {
-		cacheMu.Unlock()
+// collect 爬取并缓存候选。
+//
+// 缓存键必须带上站点顺序签名：不同方案可以用不同的站点集合，
+// 只按番剧缓存会让「第二个方案复用第一个方案的候选」—— 规则看着生效了，
+// 其实候选根本不是它那几家站点给的。
+//
+// 同一个键并发到达时只有第一个真的去爬，其余等它的结果（单飞）。
+func (b *builder) collect(ctx context.Context, regKey string, registry *source.Registry, query source.Query, stopOnFirst bool) (candidates []source.Candidate) {
+	key := regKey + "|" + query.BgmID + "|" + query.MikanID + "|" + query.Title
+
+	b.memoMu.Lock()
+	if cached, ok := b.memo[key]; ok {
+		b.memoMu.Unlock()
 		return cached
 	}
-	cacheMu.Unlock()
+	if waiting, ok := b.inflight[key]; ok {
+		b.memoMu.Unlock()
+		select {
+		case <-waiting.done:
+			// leader 崩了就把原因原样抛上去：让上层报「内部错误」，
+			// 而不是「没有可用候选」。后者会把人引去查站点。
+			if waiting.err != nil {
+				panic(waiting.err)
+			}
+			return waiting.val
+		case <-ctx.Done():
+			// 一轮被取消时不陪 leader 走完：单站点超时 25 秒，
+			// 多个站点串起来足够把整轮拖到超时之后。
+			return nil
+		}
+	}
+	wait := &inflightCall{done: make(chan struct{})}
+	b.inflight[key] = wait
+	b.memoMu.Unlock()
+
+	// 不管正常返回还是 panic 都要把等待者放出去：planOne 的 panic 是被上层 recover 的，
+	// 如果不在这里兜底收尾，同一番剧的其余订阅就会永远挂在 channel 上，整轮计划卡死。
+	defer func() {
+		crashed := recover()
+		b.memoMu.Lock()
+		if candidates != nil {
+			b.memo[key] = candidates
+		}
+		delete(b.inflight, key)
+		wait.val = candidates
+		wait.err = crashed
+		b.memoMu.Unlock()
+		close(wait.done)
+		// 收尾之后继续把 panic 往上传：leader 这条订阅要被记成「内部错误」，
+		// 而不是悄悄退化成「按规则没有可用候选」。
+		if crashed != nil {
+			panic(crashed)
+		}
+	}()
 
 	results := registry.Collect(ctx, query, stopOnFirst)
-	candidates := source.AllCandidates(results)
+	b.recordStats(results)
+	return source.AllCandidates(results)
+}
 
-	cacheMu.Lock()
-	cache[key] = candidates
-	cacheMu.Unlock()
-
-	statsMu.Lock()
+// recordStats 累计每个站点的请求数、候选数与失败数。
+func (b *builder) recordStats(results []source.SiteResult) {
+	b.statsMu.Lock()
+	defer b.statsMu.Unlock()
 	for _, result := range results {
-		summary := siteStats[result.Site]
+		summary := b.stats[result.Site]
 		if summary == nil {
 			summary = &SiteSummary{Site: result.Site}
-			siteStats[result.Site] = summary
+			b.stats[result.Site] = summary
 		}
 		summary.Requests++
 		summary.Candidates += len(result.Candidates)
@@ -480,11 +779,48 @@ func collect(ctx context.Context, registry *source.Registry, query source.Query,
 			}
 		}
 	}
-	statsMu.Unlock()
-	return candidates
+}
+
+// orderKey 是站点顺序的稳定签名，用作注册表与候选缓存的键。
+func orderKey(order []string) string {
+	cleaned := make([]string, 0, len(order))
+	for _, name := range order {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" {
+			cleaned = append(cleaned, name)
+		}
+	}
+	if len(cleaned) == 0 {
+		cleaned = append(cleaned, config.DefaultSourceOrder...)
+	}
+	return strings.Join(cleaned, ">")
+}
+
+// registryKey 用注册表实际生效的顺序做键：认不出的站点会被它丢掉，
+// 两套写法不同但实际相同的顺序应该共用一份候选缓存。
+func registryKey(registry *source.Registry) string {
+	if registry == nil {
+		return orderKey(nil)
+	}
+	return strings.Join(registry.Order(), ">")
+}
+
+// sortedSchemeNames 让方案按名字有序处理，注册表与引擎的建立顺序可复现。
+func sortedSchemeNames(schemes map[string]config.Scheme) []string {
+	names := make([]string, 0, len(schemes))
+	for name := range schemes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Apply 执行计划。只处理 update / add。
+//
+// 只有 update 会重试。理由：`setAni` 是**全量覆盖**，把同一个目标状态再写一遍
+// 结果不变，天然幂等；而 `add` 走的是 `addAni?override=false`，
+// 「传输层超时」并不等于「服务端没处理」—— 重试可能就是第二次新增。
+// 宁可让这一条留到下一个周期再试，也不要在一个不确定的前提下重复创建订阅。
 func Apply(ctx context.Context, cfg *config.Config, plan *Plan) (updated, added int, errs []string) {
 	clients := map[string]*assapi.Client{}
 	for _, action := range plan.Actions {
@@ -503,7 +839,7 @@ func Apply(ctx context.Context, cfg *config.Config, plan *Plan) (updated, added 
 		}
 		switch action.Kind {
 		case "update":
-			if err := client.SetAni(ctx, action.body); err != nil {
+			if err := withRetry(ctx, func() error { return client.SetAni(ctx, action.body) }); err != nil {
 				errs = append(errs, fmt.Sprintf("[%s] %s 更新失败: %v", action.Instance, action.Title, err))
 				continue
 			}
@@ -519,12 +855,60 @@ func Apply(ctx context.Context, cfg *config.Config, plan *Plan) (updated, added 
 	return updated, added, errs
 }
 
+// applyRetries 是一条写入的总尝试次数（含首次）。
+const applyRetries = 3
+
+// withRetry 对可重试的错误退避重试。
+//
+// 判据：传输层错误（连不上、EOF、超时）与 5xx / 429 重试；
+// 4xx（apiKey 错、参数错）重试只是白等，直接抛。
+func withRetry(ctx context.Context, fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < applyRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * 400 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				if lastErr != nil {
+					return lastErr
+				}
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retryable(err) {
+			return err
+		}
+	}
+	return lastErr
+}
+
+// retryable 判断一个错误是否值得再试一次。
+func retryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *assapi.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.HTTP >= 500 || apiErr.HTTP == http.StatusTooManyRequests
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	return true
+}
+
 // ---------- 内部工具 ----------
 
-func buildEngine(cfg *config.Config, maxStandby int) (*rules.Engine, error) {
-	primaryRules := cfg.AllPrimary()
-	primary := make([]rules.Rule, 0, len(primaryRules))
-	for _, rule := range primaryRules {
+// buildEngine 把一套方案编译成规则引擎。
+func buildEngine(scheme config.Scheme, maxStandby int) (*rules.Engine, error) {
+	primary := make([]rules.Rule, 0, len(scheme.Primary))
+	for _, rule := range scheme.Primary {
 		primary = append(primary, rules.Rule{
 			Name:     rule.Name,
 			Match:    rule.Match,
@@ -534,9 +918,8 @@ func buildEngine(cfg *config.Config, maxStandby int) (*rules.Engine, error) {
 			In:       rule.InOr(),
 		})
 	}
-	denyRules := cfg.AllDeny()
-	deny := make([]rules.DenyRule, 0, len(denyRules))
-	for _, rule := range denyRules {
+	deny := make([]rules.DenyRule, 0, len(scheme.Deny))
+	for _, rule := range scheme.Deny {
 		deny = append(deny, rules.DenyRule{Match: rule.Match, Why: rule.Why})
 	}
 	return rules.New(primary, deny, maxStandby)
@@ -657,6 +1040,16 @@ func targetLabel(target config.Target) string {
 		return target.Title
 	}
 	return target.BgmID
+}
+
+// schemeLabel 返回一条订阅实际生效的方案名；空表示用顶层 rules。
+//
+// 番剧级覆盖优先：target 上写了方案，这条订阅就按它走，实例那套不参与。
+func schemeLabel(cfg *config.Config, override, instanceName string) string {
+	if override != "" {
+		return override
+	}
+	return cfg.SchemeFor(instanceName).Name
 }
 
 // offsetsOf 取出生效的季度与偏移：番剧级配置（targets）优先，其次全局兜底。

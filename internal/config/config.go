@@ -47,6 +47,12 @@ type Instance struct {
 	Name    string `yaml:"name" json:"name"`
 	BaseURL string `yaml:"baseUrl" json:"baseUrl"`
 	APIKey  string `yaml:"apiKey" json:"apiKey"`
+	// Profile 指定这个实例用 profiles 里的哪一套订阅方案。
+	//
+	// 留空 = 用顶层 rules / sources，也就是分方案之前的老行为，老配置一个字节都不用改。
+	// 一个实例只能挂一套方案：实例是「谁在用」，方案是「怎么用」，
+	// 同一个实例里按番剧分方案这件事本来就是规则该干的（规则是按番剧挑的）。
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
@@ -125,6 +131,175 @@ type RuleFileInfo struct {
 	Count int    `json:"count"`
 }
 
+// ProfileSources 是「这套方案用哪些站点」。留空则用顶层 sources.order。
+//
+// 按方案分站点顺序是有实际用途的，不是凑对称：不同站点装的是**不同的组**。
+// 实测同一批 121 部番剧里，只在 animegarden 出现的「番剧 × 字幕组」组合有 111 个，
+// 而只在 anibt 出现的基本是放流组。所以「收藏党要全」和「追番党要快」
+// 天然对应两个不同的站点集合，不该由全局开关一刀切。
+type ProfileSources struct {
+	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
+}
+
+// Profile 是一套命名的「订阅方案」：一组规则 + 它想用哪些站点。
+//
+// 用法：实例上写 profile: 追番 / profile: 收藏，这两个实例就各跑各的口味，
+// 而 profiles 下面各自可以引用不同的外置规则文件，主配置只描述「谁是谁」。
+type Profile struct {
+	Name  string `yaml:"name" json:"name"`
+	Rules Rules  `yaml:"rules" json:"rules"`
+	// Sources 覆盖这套方案的站点顺序；留空用顶层 sources.order。
+	Sources *ProfileSources `yaml:"sources,omitempty" json:"sources,omitempty"`
+	// filePrimary / fileDeny 是这套方案自己引用的外置规则文件。
+	// 与顶层的那份同理：不参与序列化，否则保存一次就把外置内容抄进主配置。
+	filePrimary []Rule
+	fileDeny    []DenyRule
+	// FileRules 是这套方案的外置规则来源摘要，只读展示用。
+	FileRules []RuleFileInfo `yaml:"-" json:"fileRules,omitempty"`
+}
+
+// Scheme 是一个实例实际生效的视图：规则、副 RSS 上限、站点顺序都解析完了。
+//
+// 存在的意义是别让「方案」这个概念渗进 planner：planner 只认 Scheme，
+// 于是「用默认规则」和「用某个方案」在调用侧没有分支。
+type Scheme struct {
+	// Name 是方案名；空表示直接用顶层 rules / sources。
+	Name string `json:"name"`
+	// Requested 是调用方要求的那套方案名。Name 为空而 Requested 不为空，
+	// 说明那个方案不存在、已经回落到顶层规则。
+	Requested string `json:"requested,omitempty"`
+	// Missing 表示 Requested 指向的方案不存在。
+	//
+	// 存在的理由只有一个：让「回落」这件事能被看见。实例挂的方案名写错时，
+	// 如果界面只显示「（默认，顶层 rules）」，用户根本不会想到是自己写错了名字
+	// —— 他看到的是一份看起来完全正常的配置。
+	Missing bool       `json:"missing,omitempty"`
+	Primary []Rule     `json:"primary"`
+	Deny    []DenyRule `json:"deny"`
+	// MaxStandby 是每条订阅保留几条副 RSS。
+	MaxStandby int `json:"maxStandby"`
+	// SourceOrder 是这套方案生效的站点顺序。
+	SourceOrder []string `json:"sourceOrder"`
+	// RuleFiles 是这套方案用到的外置规则文件（只读）。
+	RuleFiles []RuleFileInfo `json:"ruleFiles,omitempty"`
+}
+
+// EffectivePrimary 返回实际会参与匹配的白名单条数。
+//
+// 和 len(Primary) 不是一回事：rules.New 会跳过 match 为空的规则
+// （那多半是设置页里刚加、还没填内容的空行）。报「白名单 3 条」而实际
+// 只有 1 条生效，是典型的「以为配了其实没配」。
+func (s Scheme) EffectivePrimary() int {
+	count := 0
+	for _, rule := range s.Primary {
+		if strings.TrimSpace(rule.Match) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+// EffectiveDeny 返回实际会参与匹配的黑名单条数。
+func (s Scheme) EffectiveDeny() int {
+	count := 0
+	for _, rule := range s.Deny {
+		if strings.TrimSpace(rule.Match) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+// KnownSiteNames 是全部合法的站点标识。
+//
+// 放在 config 里是为了让 Validate 能当场指出写错的名字：source.Registry
+// 对认不出的名字是**静默丢弃**的，改站点顺序时打错一个字母，
+// 表现为「这个站点就是不返回候选」——难查。两边的一致性由 source 包的测试守住。
+var KnownSiteNames = []string{"anibt", "nyaa", "animegarden", "mikan"}
+
+// IsKnownSite 判断站点标识是否合法。
+func IsKnownSite(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, known := range KnownSiteNames {
+		if name == known {
+			return true
+		}
+	}
+	return false
+}
+
+// ProfileByName 按名字取方案。
+func (c *Config) ProfileByName(name string) (*Profile, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, false
+	}
+	for i := range c.Profiles {
+		if c.Profiles[i].Name == name {
+			return &c.Profiles[i], true
+		}
+	}
+	return nil, false
+}
+
+// SchemeForProfile 解析出某个方案的生效视图；名字为空或找不到时返回默认方案。
+//
+// 返回默认方案而不是报错，是为了让「实例上写了一个已经被删掉的方案名」
+// 这件事在同步时不至于整轮停摆 —— 校验那一步会先把这种配置拦下来。
+func (c *Config) SchemeForProfile(name string) Scheme {
+	profile, ok := c.ProfileByName(name)
+	if !ok {
+		scheme := c.defaultScheme()
+		scheme.Requested = strings.TrimSpace(name)
+		scheme.Missing = scheme.Requested != ""
+		return scheme
+	}
+	scheme := Scheme{
+		Name:        profile.Name,
+		Requested:   profile.Name,
+		Primary:     append(append([]Rule(nil), profile.Rules.Primary...), profile.filePrimary...),
+		Deny:        append(append([]DenyRule(nil), profile.Rules.Deny...), profile.fileDeny...),
+		MaxStandby:  profile.Rules.MaxStandby,
+		SourceOrder: c.Sources.Order,
+		RuleFiles:   append([]RuleFileInfo(nil), profile.FileRules...),
+	}
+	if profile.Sources != nil && len(profile.Sources.Order) > 0 {
+		scheme.SourceOrder = profile.Sources.Order
+	}
+	// 方案没写 maxStandby 时继承顶层：方案只需要写「和默认不一样的地方」。
+	if scheme.MaxStandby <= 0 {
+		scheme.MaxStandby = c.Rules.MaxStandby
+	}
+	if scheme.MaxStandby <= 0 {
+		scheme.MaxStandby = 1
+	}
+	return scheme
+}
+
+// SchemeFor 返回某个实例实际生效的方案。
+func (c *Config) SchemeFor(instanceName string) Scheme {
+	instance, ok := c.InstanceByName(instanceName)
+	if !ok {
+		return c.defaultScheme()
+	}
+	return c.SchemeForProfile(instance.Profile)
+}
+
+// defaultScheme 是顶层 rules / sources 的生效视图（= 没挂方案的实例怎么跑）。
+func (c *Config) defaultScheme() Scheme {
+	maxStandby := c.Rules.MaxStandby
+	if maxStandby <= 0 {
+		maxStandby = 1
+	}
+	return Scheme{
+		Primary:     c.AllPrimary(),
+		Deny:        c.AllDeny(),
+		MaxStandby:  maxStandby,
+		SourceOrder: c.Sources.Order,
+		RuleFiles:   append([]RuleFileInfo(nil), c.FileRules...),
+	}
+}
+
 // DefaultSourceOrder 是默认的站点优先级。
 //
 // 只留两家，各有各的不可替代性：
@@ -167,6 +342,12 @@ type Target struct {
 	BgmID     string   `yaml:"bgmId" json:"bgmId"`
 	MikanID   string   `yaml:"mikanId,omitempty" json:"mikanId,omitempty"`
 	Instances []string `yaml:"instances,omitempty" json:"instances,omitempty"`
+	// Profile 给这一个番剧单独指定方案，覆盖实例上挂的那套。
+	//
+	// 真实用法是「整库按追番的节奏跑，但这几部本命要全收」：
+	// 让人为了 3 部番另开一个实例是过度设计，而按番剧覆盖正好对上
+	// 「规则是按番剧挑的」这件事本身。
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 	// Enable 新订阅是否启用；nil 时按 false 处理（不启用就不会触发下载）。
 	// 只影响新增，不会去改动已有订阅的开关。
 	Enable *bool `yaml:"enable,omitempty" json:"enable,omitempty"`
@@ -322,9 +503,12 @@ type Config struct {
 	Sources   Sources    `yaml:"sources" json:"sources"`
 	Rules     Rules      `yaml:"rules" json:"rules"`
 	Instances []Instance `yaml:"instances" json:"instances"`
-	Targets   []Target   `yaml:"targets" json:"targets"`
-	Discover  Discover   `yaml:"discover,omitempty" json:"discover,omitempty"`
-	Sync      Sync       `yaml:"sync" json:"sync"`
+	// Profiles 是多套订阅方案；实例通过 Instance.Profile 挂上去。
+	// 留空 = 只有一套全局规则，与分方案之前完全一致。
+	Profiles []Profile `yaml:"profiles,omitempty" json:"profiles,omitempty"`
+	Targets  []Target  `yaml:"targets" json:"targets"`
+	Discover Discover  `yaml:"discover,omitempty" json:"discover,omitempty"`
+	Sync     Sync      `yaml:"sync" json:"sync"`
 
 	path string
 	// filePrimary / fileDeny 是外置规则文件读出来的条目。
@@ -428,7 +612,8 @@ func (c *Config) ReloadLayout() error {
 	return nil
 }
 
-// LoadRuleFiles 读取 rules.primaryFiles / rules.denyFiles 指向的外置规则文件。
+// LoadRuleFiles 读取 rules.primaryFiles / rules.denyFiles 指向的外置规则文件，
+// 以及每个方案自己的那份。
 //
 // 单独暴露成方法是为了 Web 设置页：保存时它构造的是一份全新的 Config，
 // 不重新读一遍的话，用户在设置页点一次保存就会让外置白名单当场失效。
@@ -441,34 +626,67 @@ func (c *Config) LoadRuleFiles() error {
 	c.fileDeny = nil
 	c.FileRules = nil
 
-	for _, name := range c.Rules.PrimaryFiles {
+	primary, deny, files, err := loadRuleFilesFrom(dir, c.Rules.PrimaryFiles, c.Rules.DenyFiles, "")
+	if err != nil {
+		return err
+	}
+	c.filePrimary, c.fileDeny, c.FileRules = primary, deny, files
+
+	for i := range c.Profiles {
+		profile := &c.Profiles[i]
+		profile.filePrimary = nil
+		profile.fileDeny = nil
+		profile.FileRules = nil
+		if len(profile.Rules.PrimaryFiles) == 0 && len(profile.Rules.DenyFiles) == 0 {
+			continue
+		}
+		primary, deny, files, err := loadRuleFilesFrom(
+			dir, profile.Rules.PrimaryFiles, profile.Rules.DenyFiles,
+			"方案 "+profile.Name+" 的")
+		if err != nil {
+			return err
+		}
+		profile.filePrimary, profile.fileDeny, profile.FileRules = primary, deny, files
+	}
+	return nil
+}
+
+// loadRuleFilesFrom 读一组规则文件。owner 用于把「是谁引用的」写进报错，
+// 因为现在有多套方案各自引用文件，只报文件名分不清是哪一套写错了。
+func loadRuleFilesFrom(dir string, primaryFiles, denyFiles []string, owner string) ([]Rule, []DenyRule, []RuleFileInfo, error) {
+	var (
+		primary []Rule
+		deny    []DenyRule
+		files   []RuleFileInfo
+	)
+	for _, name := range primaryFiles {
 		path := resolveRulePath(dir, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("读取规则文件失败（rules.primaryFiles 里的 %q）: %w", name, err)
+			return nil, nil, nil, fmt.Errorf("读取%s规则文件失败（primaryFiles 里的 %q）: %w", owner, name, err)
 		}
 		var list []Rule
 		if err := yaml.Unmarshal(raw, &list); err != nil {
-			return fmt.Errorf("解析规则文件 %s 失败（内容应为与 rules.primary 同构的列表）: %w", path, err)
+			return nil, nil, nil, fmt.Errorf("解析%s规则文件 %s 失败（内容应为与 rules.primary 同构的列表）: %w", owner, path, err)
 		}
-		c.filePrimary = append(c.filePrimary, list...)
-		c.FileRules = append(c.FileRules, RuleFileInfo{Path: path, Kind: "primary", Count: len(list)})
+		primary = append(primary, list...)
+		files = append(files, RuleFileInfo{Path: path, Kind: "primary", Count: len(list)})
 	}
 
-	for _, name := range c.Rules.DenyFiles {
+	for _, name := range denyFiles {
 		path := resolveRulePath(dir, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("读取黑名单文件失败（rules.denyFiles 里的 %q）: %w", name, err)
+			return nil, nil, nil, fmt.Errorf("读取%s黑名单文件失败（denyFiles 里的 %q）: %w", owner, name, err)
 		}
 		var list []DenyRule
 		if err := yaml.Unmarshal(raw, &list); err != nil {
-			return fmt.Errorf("解析黑名单文件 %s 失败（内容应为与 rules.deny 同构的列表）: %w", path, err)
+			return nil, nil, nil, fmt.Errorf("解析%s黑名单文件 %s 失败（内容应为与 rules.deny 同构的列表）: %w", owner, path, err)
 		}
-		c.fileDeny = append(c.fileDeny, list...)
-		c.FileRules = append(c.FileRules, RuleFileInfo{Path: path, Kind: "deny", Count: len(list)})
+		deny = append(deny, list...)
+		files = append(files, RuleFileInfo{Path: path, Kind: "deny", Count: len(list)})
 	}
-	return nil
+	return primary, deny, files, nil
 }
 
 // resolveRulePath 把规则文件路径按主配置所在目录展开。
@@ -567,8 +785,42 @@ func (c *Config) Normalize() {
 			c.filePrimary[i].In = c.filePrimary[i].InOr()
 		}
 	}
+	// 方案里的规则和顶层规则是同一套结构，规整方式必须一模一样，
+	// 否则「写在方案里」和「写在顶层」会得到不同的行为 —— 那种不一致最难查。
+	for p := range c.Profiles {
+		profile := &c.Profiles[p]
+		profile.Name = strings.TrimSpace(profile.Name)
+		for i := range profile.Rules.Primary {
+			profile.Rules.Primary[i].Scope = profile.Rules.Primary[i].ScopeOr()
+			if strings.TrimSpace(profile.Rules.Primary[i].In) != "" {
+				profile.Rules.Primary[i].In = profile.Rules.Primary[i].InOr()
+			}
+		}
+		for i := range profile.filePrimary {
+			profile.filePrimary[i].Scope = profile.filePrimary[i].ScopeOr()
+			if strings.TrimSpace(profile.filePrimary[i].In) != "" {
+				profile.filePrimary[i].In = profile.filePrimary[i].InOr()
+			}
+		}
+		if profile.Sources != nil {
+			order := make([]string, 0, len(profile.Sources.Order))
+			for _, name := range profile.Sources.Order {
+				name = strings.ToLower(strings.TrimSpace(name))
+				if name != "" {
+					order = append(order, name)
+				}
+			}
+			profile.Sources.Order = order
+			if len(order) == 0 {
+				// 写了个空的 sources 块等于没写：留着一个空对象，
+				// 只会让保存后的配置文件里多一段什么也没说的 `sources: {}`。
+				profile.Sources = nil
+			}
+		}
+	}
 	for i := range c.Instances {
 		c.Instances[i].BaseURL = NormalizeBaseURL(c.Instances[i].BaseURL)
+		c.Instances[i].Profile = strings.TrimSpace(c.Instances[i].Profile)
 		if c.Instances[i].Name == "" {
 			c.Instances[i].Name = c.Instances[i].BaseURL
 		}
@@ -579,6 +831,7 @@ func (c *Config) Normalize() {
 		target.JPTitle = strings.TrimSpace(target.JPTitle)
 		target.BgmID = strings.TrimSpace(target.BgmID)
 		target.MikanID = strings.TrimSpace(target.MikanID)
+		target.Profile = strings.TrimSpace(target.Profile)
 		// 允许把 bgm 链接贴在任意一栏：贴链接比手抄数字不容易错。
 		if id := BgmIDFromText(target.BgmID); id != "" {
 			target.BgmID = id
@@ -666,28 +919,14 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("sources.instance 指向的实例不存在: %s", name)
 		}
 	}
-	for _, r := range c.AllPrimary() {
-		if r.Match == "" {
-			continue
-		}
-		if _, err := regexp.Compile(r.Match); err != nil {
-			return fmt.Errorf("规则 %q 的正则不合法: %w", r.Name, err)
-		}
-		switch strings.ToLower(strings.TrimSpace(r.Scope)) {
-		case "", ScopeMain, ScopeStandby, ScopeBoth:
-		default:
-			return fmt.Errorf("规则 %q 的 scope 只能是 main / standby / both，实际 %q", r.Name, r.Scope)
-		}
-		switch strings.ToLower(strings.TrimSpace(r.In)) {
-		case "", InAny, InGroup, InTitle:
-		default:
-			return fmt.Errorf("规则 %q 的 in 只能是 any / group / title，实际 %q", r.Name, r.In)
-		}
+	if err := c.validateProfiles(); err != nil {
+		return err
 	}
-	for _, r := range c.AllDeny() {
-		if _, err := regexp.Compile(r.Match); err != nil {
-			return fmt.Errorf("排除规则 %q 的正则不合法: %w", r.Match, err)
-		}
+	if err := validateRuleSet(c.AllPrimary(), c.AllDeny(), ""); err != nil {
+		return err
+	}
+	if err := validateSiteOrder(c.Sources.Order, "sources.order"); err != nil {
+		return err
 	}
 	for i, target := range c.Targets {
 		if target.Title == "" && target.BgmID == "" {
@@ -696,6 +935,115 @@ func (c *Config) Validate() error {
 		}
 	}
 	return c.ValidateDiscover()
+}
+
+// validateProfiles 校验方案本身：名字不重复、实例挂的方案存在、方案里的规则与站点顺序合法。
+func (c *Config) validateProfiles() error {
+	seen := map[string]bool{}
+	for i := range c.Profiles {
+		profile := &c.Profiles[i]
+		if profile.Name == "" {
+			return fmt.Errorf("第 %d 个方案缺少 name（实例要用它来挂载）", i+1)
+		}
+		if seen[profile.Name] {
+			return fmt.Errorf("方案名重复: %s", profile.Name)
+		}
+		seen[profile.Name] = true
+		where := "方案 " + profile.Name + " 的"
+		primary := append(append([]Rule(nil), profile.Rules.Primary...), profile.filePrimary...)
+		deny := append(append([]DenyRule(nil), profile.Rules.Deny...), profile.fileDeny...)
+		if err := validateRuleSet(primary, deny, where); err != nil {
+			return err
+		}
+		if profile.Sources != nil {
+			if err := validateSiteOrder(profile.Sources.Order, "方案 "+profile.Name+" 的 sources.order"); err != nil {
+				return err
+			}
+		}
+	}
+	for _, instance := range c.Instances {
+		if instance.Profile == "" {
+			continue
+		}
+		if !seen[instance.Profile] {
+			return fmt.Errorf("实例 %s 挂的方案不存在: %s（可选：%s）",
+				instance.Name, instance.Profile, strings.Join(c.profileNames(), " / "))
+		}
+	}
+	// 番剧级覆盖同样是挂载点，写错了一样要在校验阶段拦下来。
+	for i, target := range c.Targets {
+		if target.Profile == "" {
+			continue
+		}
+		if !seen[target.Profile] {
+			return fmt.Errorf("第 %d 条 targets（%s）挂的方案不存在: %s（可选：%s）",
+				i+1, targetLabelOf(target), target.Profile, strings.Join(c.profileNames(), " / "))
+		}
+	}
+	return nil
+}
+
+// targetLabelOf 给一条番剧级配置起个可读名字，用于报错。
+func targetLabelOf(target Target) string {
+	switch {
+	case target.Title != "":
+		return target.Title
+	case target.JPTitle != "":
+		return target.JPTitle
+	default:
+		return target.BgmID
+	}
+}
+
+// profileNames 列出全部方案名，用于报错时给出可选值。
+func (c *Config) profileNames() []string {
+	out := make([]string, 0, len(c.Profiles))
+	for _, profile := range c.Profiles {
+		out = append(out, profile.Name)
+	}
+	return out
+}
+
+// validateRuleSet 校验一组规则（顶层或某个方案）的正则与取值。
+func validateRuleSet(primary []Rule, deny []DenyRule, where string) error {
+	for _, r := range primary {
+		if r.Match == "" {
+			continue
+		}
+		if _, err := regexp.Compile(r.Match); err != nil {
+			return fmt.Errorf("%s规则 %q 的正则不合法: %w", where, r.Name, err)
+		}
+		switch strings.ToLower(strings.TrimSpace(r.Scope)) {
+		case "", ScopeMain, ScopeStandby, ScopeBoth:
+		default:
+			return fmt.Errorf("%s规则 %q 的 scope 只能是 main / standby / both，实际 %q", where, r.Name, r.Scope)
+		}
+		switch strings.ToLower(strings.TrimSpace(r.In)) {
+		case "", InAny, InGroup, InTitle:
+		default:
+			return fmt.Errorf("%s规则 %q 的 in 只能是 any / group / title，实际 %q", where, r.Name, r.In)
+		}
+	}
+	for _, r := range deny {
+		if _, err := regexp.Compile(r.Match); err != nil {
+			return fmt.Errorf("%s排除规则 %q 的正则不合法: %w", where, r.Match, err)
+		}
+	}
+	return nil
+}
+
+// validateSiteOrder 校验站点顺序。
+//
+// 必须当场报错：source.Registry 对认不出的站点名是静默丢弃的，
+// 打错一个字母的表现是「这个站点就是不返回候选」—— 看上去像上游挂了。
+func validateSiteOrder(order []string, where string) error {
+	for _, name := range order {
+		if !IsKnownSite(name) {
+			return fmt.Errorf("%s 里的 %q 不是合法站点，可选：%s",
+				where, name, strings.Join(KnownSiteNames, " / "))
+		}
+	}
+	return nil
 }
 
 // ValidateDiscover 只校验自动发现这一段。
