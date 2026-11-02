@@ -1,0 +1,139 @@
+# AniSync 配置样例 05：一份配置里放两套方案，两个实例各跑各的口味
+#
+# 适合：手上不止一个 ANI-RSS 实例，而且它们的用途不一样 ——
+# 一个拿来追番（要快、要中文、副 RSS 一个备胎就够），
+# 一个拿来收藏（要全、BDRip 和合集也收）。
+#
+# 为什么不能只用一套顶层 rules：
+#   maxStandby 只有一档。调到 12，追番那边每条订阅每轮要多花 12 秒
+#   （ANI-RSS 抓每个副 RSS 之间 sleep 1 秒，ItemsUtil.java:54）；调到 1，
+#   收藏库就只能收一个备胎。
+#   sources.order 同样只有一档。追番不需要 nyaa（那边几乎全是放流组），
+#   收藏恰恰要它补 Erai-raws / SubsPlease / Judas。
+#   写成一套，就是逼其中一个实例将就。
+#
+# 做法：顶层 rules / sources 保留成「默认口味」（不写 profile 的实例走它），
+# 下面 profiles 写两套，实例上用 profile: <名字> 挂上去。
+#
+# ★ 五条必须记住的生效规则（写错不会报错，只会安静地用另一套）：
+#   1. 实例不写 profile -> 用顶层 rules + sources.order，与分方案之前逐字节一致。
+#   2. 写了 profile      -> 用那套方案自己的 rules 与自己的 sources.order；
+#                          顶层那套此时完全不参与。
+#   3. 方案没写的部分才继承：rules.maxStandby 没写（或写 0）继承顶层，
+#      sources 整段没写才继承顶层的 order。
+#   4. 方案是一套**完整**的规则表，不是「在顶层之上加几条」：
+#      顶层 rules.deny 里写着不要 BDRip，收藏档没写 deny，它就照样收 BDRip。
+#   5. 还有更细的一档：targets 里某条写了 profile，**命中它的那一条订阅**按那套挑，
+#      实例挂的整套都不参与（季度与偏移仍按 target 自己的值走）。
+#
+# ★ 规则文件路径同样按本文件所在目录解析。两套方案引用同一份 deny.yaml 是
+#   正常用法 —— 它们各自读一次、各自生效，不会互相污染；也可以各引各的文件。
+#
+# 怎么用：
+#   1. 整份复制成程序同目录的 config.yaml，
+#      raws.yaml / subs.yaml / all.yaml / deny.yaml 一起拿，放在同一个目录。
+#   2. 改下面 instances 里的 baseUrl 和 apiKey。
+#   3. AniSync check   —— 每个实例打一行：方案 ｜ 站点顺序 ｜ 白/黑名单 ｜ 副 RSS 上限
+#      AniSync status  —— 同一张表 + 租约 + 最近几轮，不发任何网络请求
+#      AniSync plan    —— 顶部「实例与方案」表，逐行说明这个实例用的是哪套
+
+listen: 127.0.0.1:51837
+# proxy: http://127.0.0.1:7890
+
+sources:
+  instance: ""
+  # 顶层站点顺序：给「不写 profile 的实例」用，也是方案没写 sources 时的继承值。
+  order: [anibt, nyaa]
+  stopOnFirstMatch: false
+  timeoutSeconds: 25
+  cacheMinutes: 720
+
+rules:
+  # 顶层规则 = 默认口味。下面两个实例都挂了方案，所以这一套实际不参与挑选；
+  # 留着是因为「把实例上那行 profile 删掉」之后它还得是个能跑的东西。
+  maxStandby: 1
+  # 顺序就是匹配顺序：raws.yaml 先把点过名的放流组定档，subs.yaml 再把其余候选
+  # 按版本分档。反过来会让 Nix-Raws 的 [简繁内封] 混进字幕的版本档（见 03 号样例）。
+  primaryFiles: [raws.yaml, subs.yaml]
+  denyFiles: [deny.yaml]
+  deny:
+    - {match: '合集|全集|(?i)\bbatch\b', why: 不要合集}
+
+instances:
+  # ★ profile 的值必须是下面 profiles 里某个 name；写错了 check 会当场报错，
+  #   并在报错里列出可选方案名。不写这一行 = 用顶层 rules。
+  #
+  # 两个 apiKey 故意用两个变量名：不同实例本来就可能是不同的 ANI-RSS 部署。
+  # 写成同一个 ${ANISYNC_KEY} 也一样能跑。注意 ${VAR} 没设值时会**原样**发出去，
+  # 表现为 401 —— 抄这份配置时两个变量都要设上。
+  - name: 追番库
+    baseUrl: https://ass-a.example.com/
+    apiKey: ${ANISYNC_KEY_A}
+    profile: 追番
+
+  - name: 收藏库
+    baseUrl: https://ass-b.example.com/
+    apiKey: ${ANISYNC_KEY_B}
+    profile: 收藏
+
+# ---- 两套方案 -----------------------------------------------------------
+profiles:
+  # ---- 方案 A：追番型 ---------------------------------------------------
+  # 只认中文字幕、要快、副 RSS 一个备胎。
+  - name: 追番
+    rules:
+      # 副 RSS 留 1 条：追番场景下它只负责「主组这集还没出时先顶上」。
+      # 调大不是免费的：N 条副 RSS = 每条订阅每轮多花 N 秒。
+      maxStandby: 1
+      # 这份名单和 03 号样例同构：raws.yaml 在前把放流组定档，
+      # subs.yaml 在后把其余候选按版本分档。顺序即匹配顺序，第一条命中的生效。
+      primaryFiles: [raws.yaml, subs.yaml]
+      denyFiles: [deny.yaml]
+      # 追番不等 BDRip / 合集：那要等完结几个月，等它的时候这条订阅一直空着。
+      # 收藏档恰恰要这两样，所以只写在方案里，不写进顶层。
+      deny:
+        - {match: '(?i)bdrip', why: 追番不等 BDRip，完结后再单独收}
+        - {match: '合集|全集|(?i)\bbatch\b', why: 周更不需要合集}
+    sources:
+      # 站点少两家：追番只认中文字幕，nyaa 侧几乎全是放流组（Erai-raws /
+      # SubsPlease 这些），多开一家只是多一轮请求和一批用不上的候选。
+      order: [anibt, animegarden]
+
+  # ---- 方案 B：收藏型 ---------------------------------------------------
+  # 有偏好的全收：能按偏好排的先排，排不上的全落兜底档，一个都不落下。
+  - name: 收藏
+    rules:
+      # 全收口径。12 这个数字来自 04 号样例的实测：121 部番剧按组名去重后，
+      # 只有 2 部真的需要 12 条上限。
+      maxStandby: 12
+      # all.yaml 必须排最后：它那条 .+ 命中任意非空组名，摆在前面后面就再也
+      # 匹配不到自己那份名单了。前三行是偏好，最后一行是兜底。
+      primaryFiles: [raws.yaml, subs.yaml, all.yaml]
+      denyFiles: [deny.yaml]
+      # 刻意不写 deny：收藏要的就是「除了黑名单全都要」，
+      # BDRip / 合集正是它的收集目标。顶层那条 BDRip 也不会被继承（方案是完整规则表）。
+    sources:
+      # 四家全开：多一家多一批候选。收藏不怕慢，只怕漏。
+      # mikan 的条目在 anibt / animegarden 上基本重叠，留着是为了兜极端情况。
+      order: [anibt, animegarden, mikan, nyaa]
+
+# 番剧级覆盖：整库按实例挂的「追番」跑，但这一部是本命，要全收。
+# 命中这条的订阅按 收藏 那套挑（副 RSS 12 条、四家站点都爬），实例方案不参与；
+# 季度仍然按这条自己的 season 走 —— 覆盖方案不动季度与偏移，两件事互不影响。
+# plan 里只会在这一行末尾补一句（按番剧覆盖方案：收藏），其余行不刷屏。
+targets:
+  - title: 冰之城墙
+    bgmId: "https://bgm.tv/subject/665390"
+    profile: 收藏
+    season: 2
+
+sync:
+  intervalMinutes: 0
+  preview: false
+  addMissing: false
+
+discover:
+  enabled: true
+  sources: [yuc]
+  limit: 50
+  enable: false

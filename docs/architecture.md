@@ -3,9 +3,12 @@
 ## 目录职责
 
 ```
-cmd/anisync          命令行入口：init / check / discover / probe / plan / sync / serve / tray
+cmd/anisync          命令行入口：init / check / discover / probe / plan / sync / serve / tray / status
 internal/workdir     运行期文件位置（程序同目录）
-internal/config      配置读写：YAML、环境变量展开、校验与默认值
+internal/config      配置读写：YAML、环境变量展开、校验与默认值；方案解析（profiles → Scheme）
+internal/daemon      常驻调度循环：每轮重读配置、间隔热取、睡眠切片、崩溃兜住、失败退避
+internal/lease       单飞租约：data/sync.lock 心跳式独占，防止两个进程同时写同一批实例
+internal/journal     运行日志：data/runs.jsonl，保留最近 200 轮结果，status 读它
 internal/cache       站点数据磁盘缓存（TTL + 原子落盘）
 internal/assapi      ANI-RSS API 客户端
 internal/discover    本季新番：读 Yuc 当季番剧表，用 Bangumi 补 bgmId，产出待新增的番剧
@@ -19,9 +22,31 @@ scripts/             构建与打包脚本
 docs/                文档
 ```
 
-依赖方向单向：`cmd → planner / webui / tray → discover / rules / source / cache / config → assapi / httpx`。
+依赖方向单向：`cmd → planner / webui / tray / daemon → discover / rules / source / cache / journal / lease / config → assapi / httpx`。
 
 ## 数据流
+
+配置先被解析成「每个实例实际生效的那一套」，然后才进规划：
+
+```
+config.profiles ──┐
+                  ├──► config.SchemeFor(instanceName) ──► config.Scheme
+instance.profile ─┘        （规则合并 / 站点顺序 / 副 RSS 上限都解析完）
+                                     │
+                                     ▼
+                           planner.newBuilder
+                             ├─ engines[方案名]        按方案名复用规则引擎
+                             └─ regists[站点顺序签名]   按 orderKey 复用注册表
+                                     │
+                                     ▼
+         collect() 的候选缓存键 = 站点顺序签名 | bgmId | mikanId | title
+```
+
+`SchemeFor` 是这条链上的分叉点：它按实例拿到 `Scheme`，planner 之后只认 `Scheme`，
+不再关心「这个实例挂没挂方案」。没写 `profile` 的实例拿到的是顶层 `rules` / `sources`
+的视图，与分方案之前逐字一致。（番剧级的第二道分叉见「关键设计」里的 `targets[].profile`。）
+
+然后才是每一轮同步的主链路：
 
 ```
 discover（可选）──► 现在在放的番剧 ──► 自动生成的 targets
@@ -44,6 +69,34 @@ setAni（update） / rssToAni + addAni（add）
 ```
 
 ## 关键设计
+
+**方案在 config 层解析完，planner 只认 `Scheme`。** `profiles` 是给人看的写法，
+`Scheme` 是给代码用的视图：`config.SchemeFor(instanceName)` 把「实例挂的方案」展开成
+规则（内联 `primary` / `deny` 在前，外置规则文件按声明顺序追加）、生效的 `maxStandby`
+与站点顺序。方案没写的字段继承顶层（`maxStandby` 为 0 时取顶层，`sources` 整段缺省时
+取顶层的 `order`），没挂方案的实例则直接拿顶层那一套 —— 于是「用默认规则」和「用某个方案」
+在调用侧没有分支，planner 不必知道 `profiles` 存在。
+`targets[].profile` 是同一条链上的第二个入口：命中某条番剧配置的订阅走
+`SchemeForProfile(target.Profile)` 而不是实例那套，实例挂的方案对这一条不参与；季度与偏移
+仍由 `offsetsOf` 按 target 自己的值处理，两件事互不影响。`Action.Profile` 记下每条订阅实际
+生效的方案名，所以计划里能回答「这一条为什么全收了」，而不只是「实例挂的是哪套」。
+
+**候选缓存键必须带站点顺序签名。** planner 按方案名复用规则引擎，按站点顺序签名
+（`orderKey`，即 `anibt>animegarden` 这样的稳定字符串）复用注册表，而候选缓存（`memo`）
+的键是「签名 | bgmId | mikanId | title」。少了签名这一步，两套**站点不同的**方案会互相复用候选
+（缓存只按番剧记）：规则看着按方案生效了，候选却来自另一个方案的站点集合 ——
+表现为「收藏档拿了追番档那两家的候选，nyaa 的组一个都没进来」，
+而且只在两套方案站点不同的配置下出现，最难查。
+
+**同一份配置只允许一个进程写。** ANI-RSS 的 `setAni` 是全量覆盖，两个进程各算一份目标状态
+再各自整份写回，结果会在两组之间反复横跳且不报错。`internal/lease` 用 `data/sync.lock`
+的心跳租约（TTL 10 分钟、每 2 分钟续约）做单飞，而不是操作系统文件锁：发布物是单文件静态
+二进制，为它引平台 API 不划算；而且进程被强杀时没人来释放锁，租约靠「多久没心跳」自动过期，
+语义反而更贴。代价是过期判断看时间不看进程存活，所以留了 `--force` 给「明确知道旧进程已经死了」的场合。
+
+**常驻循环每轮重读配置。** `internal/daemon` 不缓存启动时的 `*Config`：Web 设置页保存时构造的是
+一份全新的对象，抓着旧指针的调度器会永远跑旧规则，表现为「改完没生效」。间隔同理每轮重取，
+长睡眠切成 ≤30 秒的片段轮询，于是「改成 0 就停、改回非 0 立刻跑一轮」不需要重启。
 
 **发现链路不猜番剧，靠 `bgmId` 走到底。** `discover` 只负责「当季有什么番剧在放」，
 产出的 `config.Target` 和用户手写的 `targets` 走同一条路：同样的站点爬取、同样的规则排序、

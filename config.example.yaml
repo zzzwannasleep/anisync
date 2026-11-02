@@ -1,8 +1,8 @@
 # AniSync 配置示例：复制为 config.yaml，与程序放在同一个目录。
 # 所有运行期文件都留在程序同目录：config.yaml 与 data/cache.json。
 #
-# 不想从零写的话，samples/ 目录里有四份现成的完整配置（只追放流 / 只要字幕组 /
-# 字幕组加放流 / 全收），整份复制过来改掉 instances 就能用。
+# 不想从零写的话，samples/ 目录里有五份现成的完整配置（只追放流 / 只要字幕组 /
+# 字幕组加放流 / 全收 / 一份配两套方案），整份复制过来改掉 instances 就能用。
 
 # 本地设置页监听地址。用五位数高位端口，避开常见服务端口与系统动态端口区间。
 listen: 127.0.0.1:51837
@@ -75,14 +75,94 @@ rules:
   deny:
     - {match: '合集|全集|BDRip', why: 不要合集}
 
+# ---- 多套订阅方案（可选）-----------------------------------------------
+# 一个实例挂一套方案，不同实例就能跑不同口味。
+#
+# 什么时候需要它：只有顶层 rules / sources 时，「副 RSS 留几条」「开哪几个站点」
+# 是全局唯一的。追番要快（副 RSS 1 条、站点只开中文组多的两家），收藏要全
+# （副 RSS 12 条、四家全开、BDRip 和合集也收）—— 一套规则只能二选一，
+# 另一个实例将就。分开之后，同一份 config.yaml 里两套口味各自成立。
+#
+# 生效规则（决定「写了到底算不算数」，别靠猜）：
+#   · 实例不写 profile -> 用上面的顶层 rules + sources.order，
+#                         与分方案之前逐字节一致，老配置一个字段都不用改。
+#   · 实例写了 profile -> 用那套方案的 rules（内联 primary / deny 在前，
+#                         primaryFiles / denyFiles 按声明顺序追加）与它自己的
+#                         sources.order；顶层那套此时完全不参与。
+#   · 方案没写 rules.maxStandby（或写 0）-> 继承顶层 rules.maxStandby。
+#   · 方案没写 sources                   -> 用顶层 sources.order。
+#   · 规则文件路径同样按本文件所在目录解析；两套方案引用同一份文件是正常用法
+#     （各自读一次、各自生效），也可以各引各的。
+#   · 方案是一套**完整**的规则表，不是「在顶层之上加几条」：这里一条规则都不写，
+#     这套方案就真的没有白名单规则。
+#   · Validate 会当场拦下四种错：方案名为空或重复；实例挂的方案不存在；
+#     targets 里某条挂的方案不存在（两种报错都会列出可选方案名）；
+#     sources.order（顶层或方案内）出现不认识的站点名 ——
+#     合法值只有 anibt / animegarden / mikan / nyaa。
+#   · targets 里也能写 profile（见文件末尾）：命中的那一条订阅按覆盖的方案挑，
+#     实例挂的整套对它不参与。
+#
+# 带外置规则文件、能直接跑的一份见 samples/05-双方案.yaml。
+#
+# 设置页的「订阅方案」面板改的就是这一段：保存是整份配置回传，所以写在文件里的
+# 方案不会因为点了一次保存就消失；外置规则文件的内容仍然只能在文件里改。
+profiles:
+  # 追番型：只认中文字幕、副 RSS 一个备胎、站点只开中文组多的两家。
+  - name: 追番
+    rules:
+      # 副 RSS 留 1 条：追番场景下它只负责「主组这集还没出时先顶上」。
+      # 调大不是免费的 —— ANI-RSS 抓每个副 RSS 之间 sleep 1 秒（ItemsUtil.java:54）。
+      maxStandby: 1
+      # 这三条版本档和顶层 primary 重合是故意的：方案是一套自己的规则表。
+      # 想换成外置文件（samples/subs.yaml 那样），就删掉 primary 整段、改成
+      #   primaryFiles: [raws.yaml, subs.yaml]
+      primary:
+        - {name: 简繁日内封, match: '(?i)简繁|簡繁|CH[ST]&CH[ST]', priority: 100, scope: main, in: title}
+        - {name: 简日内嵌,   match: '(?i)简日|簡日|简体|簡體|简中|簡中|\bCHS\b|\bGB\b|GB_CN', priority: 200, scope: main, in: title}
+        - {name: 繁日内嵌,   match: '(?i)繁日|繁体|繁體|繁中|\bCHT\b|BIG5', priority: 300, scope: main, in: title}
+      # 追番不等 BDRip / 合集：那要等完结几个月，等它的时候这条订阅一直空着。
+      # 收藏档恰恰要这两样，所以只写在方案里，不写进顶层。
+      deny:
+        - {match: '(?i)bdrip', why: 追番不等 BDRip，完结后再单独收}
+        - {match: '合集|全集|(?i)\bbatch\b', why: 周更不需要合集}
+    sources:
+      # 站点少两家：追番只认中文字幕，nyaa 侧几乎全是放流组（Erai-raws /
+      # SubsPlease 这些），多开一家只是多一轮请求和一批用不上的候选。
+      order: [anibt, animegarden]
+
+  # 收藏型：有偏好的全收 —— 能按偏好排的先排，排不上的全落兜底档。
+  - name: 收藏
+    rules:
+      # 全收口径：12 这个数字来自 samples/04-全收.yaml 里的实测数据。
+      maxStandby: 12
+      # in: group + .+ 命中任意非空组名，等于「每个组都算被点过名」——
+      # 点名制下不点名的一个都不进副 RSS，这条把副 RSS 收满。
+      primary:
+        - {name: 全收, match: '.+', priority: 500, scope: both, in: group}
+      # 「先按偏好排、其余兜底」的写法是把规则换成外置文件（顺序即匹配顺序，
+      # all.yaml 必须排最后），文件放在本文件旁边：
+      #   primaryFiles: [raws.yaml, subs.yaml, all.yaml]
+      #   denyFiles: [deny.yaml]
+      # 完整例子见 samples/05-双方案.yaml。
+      #
+      # 刻意不写 deny：收藏要的就是「除了黑名单全都要」，BDRip 与合集正是它的
+      # 收集目标。顶层 rules.deny 里那条 BDRip 也不会被继承 —— 方案是覆盖，不是合并。
+    sources:
+      # 四家全开：多一家多一批候选。收藏不怕慢，只怕漏。
+      order: [anibt, animegarden, mikan, nyaa]
+
 instances:
+  # profile 的值必须是上面 profiles 里某个 name；写错了 check 会当场报错并列出
+  # 可选方案名。不写 profile = 用顶层 rules + sources.order（与老配置完全一致）。
   - name: 主库
     baseUrl: https://ass.example.com/
     apiKey: ${ANISYNC_KEY_MAIN}     # 支持 ${ENV} 写法，避免明文落盘
+    profile: 追番                    # 只认中文字幕、副 RSS 一个备胎
   - name: 备用库
     baseUrl: http://192.168.1.10:7789/
     apiKey: ${ANISYNC_KEY_BACKUP}
     enabled: false                  # 临时停用
+    profile: 收藏                    # 有偏好的全收；停用期间不影响另一个实例
 
 # 按番剧规定季度与剧集偏移。
 #
@@ -97,6 +177,10 @@ instances:
 # 所以写「冰之城墙」就能命中；日文名写在 jpTitle 里，写「氷の城壁」也能命中。
 #
 # 留空 = 不碰订阅里已有的值。
+#
+# 某一部要跟整库不一样时，在这一条上写 profile: —— 命中的订阅按那套方案挑，
+# 实例挂的那套不参与；季度与偏移仍然按这条的 season / offset 走，两者互不影响。
+#
 # 同一个列表还兼作「实例里没有的番剧自动新增」：加 --add-missing 时按规则新建订阅，
 # 默认不启用（enable: false），避免一上来就触发下载。
 targets: []
@@ -104,6 +188,7 @@ targets: []
 #    bgmId: "https://bgm.tv/subject/665390" # 链接与纯数字都认
 #    jpTitle: 氷の城壁                      # 日文原名；Nyaa 这类站点只认日文，中文名搜不到
 #    instances: [主库]                      # 留空 = 所有实例
+#    profile: 收藏                          # 按番剧覆盖方案：这一部按收藏档挑，实例那套不参与
 #    enable: false                          # 只影响新增，不会去改已有订阅的开关
 #    season: 2                              # 季度：该番剧的所有订阅共用一个值（最常写的就是这个）
 #    offset: -12                            # 主 RSS 集偏移；只有确认主 RSS 组的起数才写
@@ -150,7 +235,13 @@ discover:
   # exclude: ['合集', '(?i)国漫|国创']
 
 sync:
-  intervalMinutes: 0    # 后台自动爬取间隔，单位分钟；0 = 不自动
+  # 后台自动爬取间隔，单位分钟；0 = 不自动。
+  #
+  # 这个值可以热改，不用重启：常驻进程每轮都重新读一遍配置与外置规则文件，
+  # 间隔也是每轮重取的 —— 在设置页把它改成 0 就停；停着的时候改回非 0，
+  # 会立刻跑一轮，而不是先等一个完整间隔。
+  # 等待被切成 ≤30 秒的片段，所以上面这些改动半分钟内就会生效。
+  intervalMinutes: 0
   preview: false        # true = 只生成计划不写入，等价于命令行 --preview
   addMissing: false
 
