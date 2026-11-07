@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<!-- AniSync.app is the GUI client: it owns a real window and belongs in the
+	     Dock and the app switcher, so LSUIElement must NOT be true. The old
+	     CLI build's menu-bar-only .app was the one that set it (see
+	     docs/build.md). Do not copy that flag into this Info.plist. -->
+	<key>LSUIElement</key>
+	<false/>
+	<!-- Plain-HTTP ANI-RSS instances (http://192.168.1.5:7777 is the normal
+	     shape of a self-hosted instance). See docs/build.md
+	     "明文 HTTP 实例的平台策略与我们的取舍" for the full reasoning.
+
+	     Why NSAllowsArbitraryLoads and not NSAllowsLocalNetworking:
+	     NSAllowsLocalNetworking only covers .local / unqualified / private-range
+	     hosts, which is narrower than this product needs, since a user may point
+	     at a DDNS or domain host over http. It is also documented to take
+	     precedence over NSAllowsArbitraryLoads when both are present on modern
+	     OS versions, so listing both keys would silently NARROW the policy to
+	     LAN-only instead of broadening it. NSAllowsArbitraryLoads on its own is
+	     strictly broader and cannot be overridden by a sibling key, so the
+	     choice is safe regardless of which precedence behaviour an OS has.
+
+	     Honest caveat: this key is probably a no-op for us. dart:io opens raw
+	     sockets and does its own TLS with BoringSSL (it references no CFNetwork
+	     or NSURLSession symbol), and ATS is a CFNetwork-layer policy, so our
+	     outbound traffic never passes through it. Kept as defence in depth for
+	     any future code path that does use the platform stack. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>$(PRODUCT_COPYRIGHT)</string>
+	<key>NSMainNibFile</key>
+	<string>MainMenu</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

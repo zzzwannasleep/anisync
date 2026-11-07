@@ -1,0 +1,3 @@
+# Keeps this directory in git. libanisync_core.so is a build product and is
+# gitignored -- scripts/build-core.ps1 drops it here before the APK is built
+# (docs/build.md, docs/ops-api.md §1.2).

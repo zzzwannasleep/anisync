@@ -28,6 +28,15 @@
 //	  -bin dist/AniSync-windows-amd64.exe
 //	go run ./scripts/pack -version 0.1.6 -os macos -arch arm64 \
 //	  -app dist/AniSync.app
+//
+// GUI（Flutter 应用）走 -gui 模式：顶层目录与 zip 基名都换成 AniSync-GUI，
+// 只把 -staging 目录的内容原样放进去，不附 CLI 的样例与 config.example.yaml：
+//
+//	go run ./scripts/pack -version 0.1.11 -os windows -arch amd64 \
+//	  -gui -staging dist/gui-stage -top AniSync-GUI -name AniSync-GUI-0.1.11-windows-x64
+//
+// 为什么 CLI 与 GUI 共用一个打包器：权限位与 UTF-8 标志位这两条只有在 Go 里
+// 才做得对（见上）。分开写两份，迟早有一份会退化成 Compress-Archive 那套。
 package main
 
 import (
@@ -67,6 +76,9 @@ func run() error {
 		bin      = flag.String("bin", "", "二进制路径（与 -app 二选一）")
 		app      = flag.String("app", "", ".app 目录路径（与 -bin 二选一，macOS 用）")
 		top      = flag.String("top", "AniSync", "zip 里的顶层文件夹名")
+		gui      = flag.Bool("gui", false, "GUI 布局：只打包 -staging 的内容，不附样例与 config.example.yaml")
+		staging  = flag.String("staging", "", "-gui 模式下要打包的目录，其内容成为 <top>/ 的直接内容")
+		name     = flag.String("name", "", "zip 基名（不含 .zip）；留空则用 AniSync-<version>-<os>-<arch>")
 	)
 	flag.Parse()
 
@@ -77,7 +89,11 @@ func run() error {
 		return fmt.Errorf("缺少 -os")
 	case *arch == "":
 		return fmt.Errorf("缺少 -arch")
-	case (*bin == "") == (*app == ""):
+	case *gui && *staging == "":
+		return fmt.Errorf("-gui 需要 -staging")
+	case *gui && (*bin != "" || *app != ""):
+		return fmt.Errorf("-gui 不能与 -bin / -app 同时使用")
+	case !*gui && (*bin == "") == (*app == ""):
 		return fmt.Errorf("-bin 与 -app 必须给且只给一个")
 	}
 
@@ -88,9 +104,22 @@ func run() error {
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		return err
 	}
-	zipPath := filepath.Join(*out, fmt.Sprintf("AniSync-%s-%s-%s.zip", *version, *platform, *arch))
+	// 基名留空 = 既有行为，逐字节不变：build-all.ps1 与 build.yml 都依赖这个名字。
+	base := *name
+	if base == "" {
+		base = fmt.Sprintf("AniSync-%s-%s-%s", *version, *platform, *arch)
+	}
+	zipPath := filepath.Join(*out, base+".zip")
 
-	if err := writeZip(zipPath, archiveInput{repo: repo, top: *top, bin: *bin, app: *app, plat: *platform}); err != nil {
+	if err := writeZip(zipPath, archiveInput{
+		repo:    repo,
+		top:     *top,
+		bin:     *bin,
+		app:     *app,
+		plat:    *platform,
+		gui:     *gui,
+		staging: *staging,
+	}); err != nil {
 		return err
 	}
 
@@ -103,11 +132,13 @@ func run() error {
 }
 
 type archiveInput struct {
-	repo string
-	top  string
-	bin  string
-	app  string
-	plat string
+	repo    string
+	top     string
+	bin     string
+	app     string
+	plat    string
+	gui     bool
+	staging string
 }
 
 func writeZip(zipPath string, in archiveInput) error {
@@ -129,6 +160,16 @@ func writeArchive(zw *zip.Writer, in archiveInput) error {
 	// 顶层文件夹显式写一条：解压工具才会无条件建出它。
 	if err := addDir(zw, in.top); err != nil {
 		return err
+	}
+
+	if in.gui {
+		// GUI 布局：-staging 里的东西原样成为 <top>/ 的直接内容。
+		// 刻意**不**附 config.example.yaml 与 samples/：那是命令行工具的样例，
+		// 放进 GUI 包里只会让人以为 GUI 会读它们（GUI 读的是引擎自己的工作区）。
+		if err := addTree(zw, in.staging, in.top); err != nil {
+			return fmt.Errorf("打包 %s: %w", in.staging, err)
+		}
+		return nil
 	}
 
 	if in.app != "" {
@@ -245,13 +286,22 @@ func addTree(zw *zip.Writer, base, prefix string) error {
 	})
 }
 
-// appMode 给 .app 里的条目定权限。
+// appMode 给 .app / GUI staging 里的条目定权限。
 //
-// 只有 Contents/MacOS/ 下面需要可执行位 —— 而且必须显式给，不能靠源文件系统的
-// mode：CI 的 darwin 构建跑在 macOS 上照抄没问题，但本地在别的系统上打同一个包时，
-// 照抄会打出不可执行的 .app。
+// 可执行位必须显式给，不能靠源文件系统的 mode：CI 的 darwin 构建跑在 macOS 上
+// 照抄没问题，但本地在别的系统上打同一个包时，照抄会打出不可执行的 .app。
+//
+// 两种布局都要命中：
+//   - -app 模式：rel 从 .app 内部算起（Contents/MacOS/AniSync）
+//   - -gui 模式：rel 从 staging 算起，.app 只是路径中间的一段
+//     （AniSync.app/Contents/MacOS/AniSync）
 func appMode(rel string) fs.FileMode {
-	if strings.HasPrefix(filepath.ToSlash(rel), "Contents/MacOS/") {
+	slash := filepath.ToSlash(rel)
+	if strings.HasPrefix(slash, "Contents/MacOS/") || strings.Contains(slash, ".app/Contents/MacOS/") {
+		return modeExec
+	}
+	// GUI 的 Windows 布局：exe 直接躺在顶层。
+	if !strings.Contains(slash, "/") && strings.HasSuffix(strings.ToLower(slash), ".exe") {
 		return modeExec
 	}
 	return modeFile

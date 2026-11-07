@@ -1,0 +1,559 @@
+name: app
+
+# 跨平台 GUI 应用（Flutter）的 CI。
+#
+# 与 build.yml 明确分工，两个文件不许合并：
+#   build.yml  管 CLI 的既有发布流程，产物是「单静态二进制打成的
+#              AniSync-<版本>-<平台>-<架构>.zip」，那个承诺不动。
+#   app.yml    （本文件）管 GUI：Flutter 侧的 analyze/test，以及 Go 引擎
+#              编成 c-shared 动态库的六格矩阵。
+# GUI 的最终打包（把 lib 塞进 .app / .exe 目录 / APK）归 t4，这里只出库。
+#
+# ── 依赖契约：scripts/build-core.ps1（由 t4 提供，本文件写就时尚未落地）──
+#   pwsh scripts/build-core.ps1 -OS <windows|macos|linux|android> \
+#                               -Arch <amd64|arm64> [-Ndk <ndk 根目录>]
+#   产出固定落在：app/build/native/<os>-<arch>/<库文件名>
+#     windows -> anisync_core.dll
+#     macos   -> libanisync_core.dylib
+#     linux   -> libanisync_core.so
+#     android -> libanisync_core.so
+#   退出码非 0 视为失败。参数或路径若与上面不符，改本文件或改脚本，二者必须一致。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'cmd/anisync-core/**'
+      - 'internal/**'
+      - 'scripts/**'
+      - '.github/workflows/app.yml'
+  workflow_dispatch:
+
+# 同一分支上的重复推送取消旧的一轮：六格矩阵每个都要编 Go，排队白烧额度。
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Flutter 版本必须钉死，不许写 channel: stable。
+  # stable 会随时间漂移：某天 CI 悄悄换了 Flutter 版本、analyze 红一片，
+  # 而所有开发机还是绿的 —— 「本地绿 CI 红」是最难查的一类故障。
+  # 3.47.9 是本机实测并已跑通 analyze/test 的版本（docs/toolchain-routes.md）。
+  FLUTTER_VERSION: '3.47.9'
+  # 与 build.yml 保持一致，不许单独升级。
+  GO_VERSION: '1.24'
+  # 镜像：flutter-io.cn 在有代理/无代理两种网络下都比 storage.googleapis.com 稳。
+  FLUTTER_STORAGE_BASE_URL: 'https://storage.flutter-io.cn'
+  PUB_HOSTED_URL: 'https://pub.flutter-io.cn'
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # 1) Flutter 侧：pub get / analyze / test
+  # ────────────────────────────────────────────────────────────────────────
+  analyze-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '${{ env.FLUTTER_VERSION }}'
+          cache: true
+
+      # 测试要跑真实的 FFI 回环，所以先编一份宿主平台（linux/amd64）的库，
+      # 再用 ANISYNC_CORE_LIB 指过去 —— flutter test 不打包任何原生产物，
+      # 这是 docs/ops-api.md §1.2 指定的唯一加载方式。
+      - name: 编宿主库（linux/amd64）
+        shell: pwsh
+        run: ./scripts/build-core.ps1 -OS linux -Arch amd64
+
+      - name: 校验宿主库真的产出
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="app/build/native/linux-amd64/libanisync_core.so"
+          if [ ! -f "$lib" ]; then
+            echo "✗ scripts/build-core.ps1 报成功但没产出 $lib"
+            find app/build/native -type f || true
+            exit 1
+          fi
+          ls -lh "$lib"
+          echo "ANISYNC_CORE_LIB=$(pwd)/$lib" >> "$GITHUB_ENV"
+
+      # 注意：工作目录用 working-directory 指定，不要写 --project-dir。
+      # flutter create 没有这个选项（实测 exit 64 /
+      # `Could not find an option named "--project-dir"`），别照抄到别处。
+      - name: flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: flutter analyze
+        working-directory: app
+        run: flutter analyze
+
+      # app/test 为空时 flutter test 原样返回 exit 1（`Test directory "test"
+      # not found.`），--empty 不生成测试目录。这是故意的硬门禁：GUI 契约
+      # （app/test/contract/ 的 ops 对拍）没落地之前，这一步必须红。
+      - name: flutter test
+        working-directory: app
+        run: flutter test
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 2) Go 引擎：六格矩阵，每个目标产出一个 zip
+  #    （和 build.yml 一样：产物一律 zip，没有裸文件）
+  # ────────────────────────────────────────────────────────────────────────
+  core:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, goos: windows, goarch: amd64, lib: anisync_core.dll }
+          - { runner: windows-latest, goos: windows, goarch: arm64, lib: anisync_core.dll }
+          - { runner: macos-latest,   goos: macos,   goarch: arm64, lib: libanisync_core.dylib }
+          - { runner: macos-latest,   goos: macos,   goarch: amd64, lib: libanisync_core.dylib }
+          - { runner: ubuntu-latest,  goos: android, goarch: arm64, lib: libanisync_core.so, abi: arm64-v8a }
+          - { runner: ubuntu-latest,  goos: android, goarch: amd64, lib: libanisync_core.so, abi: x86_64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      # ubuntu runner 预装 Android SDK 与 NDK，路径就在这个环境变量里。
+      # 不是自己装的，所以只断言它存在，不写死版本号。
+      - name: 校验 Android NDK 可用
+        if: matrix.goos == 'android'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_NDK_LATEST_HOME:-}" ]; then
+            echo "✗ ANDROID_NDK_LATEST_HOME 为空，runner 上没有预装 NDK"
+            ls -d "${ANDROID_HOME}"/ndk/* 2>/dev/null || true
+            exit 1
+          fi
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+
+      - name: 编 c-shared 引擎
+        shell: pwsh
+        run: |
+          $extra = @()
+          if ('${{ matrix.goos }}' -eq 'android') {
+            $extra = @('-Ndk', $env:ANDROID_NDK_LATEST_HOME)
+          }
+          ./scripts/build-core.ps1 -OS '${{ matrix.goos }}' -Arch '${{ matrix.goarch }}' @extra
+
+      # 门禁：脚本报成功不等于库真的出来了，也不等于架构对。逐目标验。
+      - name: 校验产物（存在 + 架构匹配）
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="app/build/native/${{ matrix.goos }}-${{ matrix.goarch }}/${{ matrix.lib }}"
+          if [ ! -f "$lib" ]; then
+            echo "✗ 未产出 $lib"
+            find app/build/native -type f || true
+            exit 1
+          fi
+          ls -lh "$lib"
+          case "${{ matrix.goos }}" in
+            macos)
+              file "$lib"
+              otool -hv "$lib" | tail -n +2
+              ;;
+            windows)
+              file "$lib" || true
+              ;;
+            android)
+              file "$lib"
+              # 确认真的编成了 Android 目标，而不是顺手编了个宿主库顶包
+              if ! file "$lib" | grep -qi 'android\|aarch64\|x86-64'; then
+                echo "✗ $lib 看起来不像 Android 目标产物"
+                exit 1
+              fi
+              ;;
+          esac
+
+      # Android 的库要落进 jniLibs，AGP 才会打进 APK。
+      # jniLibs 里的 .so 是 gitignore 的构建产物，只在这里由脚本产物填。
+      - name: 落进 jniLibs（android）
+        if: matrix.goos == 'android'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="app/build/native/android-${{ matrix.goarch }}/libanisync_core.so"
+          dst="app/android/app/src/main/jniLibs/${{ matrix.abi }}/libanisync_core.so"
+          mkdir -p "$(dirname "$dst")"
+          cp -f "$src" "$dst"
+          ls -lh "$dst"
+
+      - name: 打成 zip
+        shell: pwsh
+        run: |
+          $name = "AniSync-GUI-core-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item "app/build/native/${{ matrix.goos }}-${{ matrix.goarch }}/${{ matrix.lib }}" artifact/
+          # 用 Compress-Archive 而不是 `zip`：`zip` 在 ubuntu/macos 的 runner 上有，
+          # 但 windows-latest 的 Git Bash（Git for Windows）不带它，用一个存在性不确定
+          # 的命令会让整格矩阵在 Windows 上直接红。Compress-Archive 是 PowerShell 自带，
+          # 三个 runner 都保证有。
+          #
+          # 已知代价：Compress-Archive 不写 Unix 权限位（scripts/pack 就是为了这件事才用
+          # Go 写的，见 docs/build.md）。这三个 zip 是**中间产物**不是发布物：Android 的
+          # .so 由 AGP 从 jniLibs 打进 APK，桌面端的库由打包步骤重新拷贝 —— 下游不依赖
+          # zip 里的权限位。如果将来这几个 zip 要直接给用户，换成 Go 打包器。
+          Compress-Archive -Path artifact/* -DestinationPath $name -Force
+          Get-Item $name | Format-List Name,Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AniSync-GUI-core-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: AniSync-GUI-core-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 3) Flutter 应用：真正产出 .exe / .app / .apk
+  #
+  # 在这三个作业族出现之前，这里是个洞：core 矩阵只编 Go 引擎库、analyze-test 只跑
+  # flutter test，**没有任何一格跑过 flutter build**。于是 AniSync-GUI-*.zip 与顶层
+  # 目录 AniSync-GUI/ 只存在于 README / docs 里，三个平台的产物从没被构建、也谈不上
+  # 被验证。
+  #
+  # 每格的步骤顺序是硬要求，不能颠倒：
+  #   备引擎库 -> 校验库真的在 -> (android) 落进 jniLibs 并校验
+  #   -> 编 GUI -> 校验产物精确存在 -> 出包 -> 校验包精确存在 -> 上传
+  #
+  # 为什么要自己校验、而不是看脚本退出码：三处「把库接进去」都发生在构建期 ——
+  # Windows 靠 CMake 的 POST_BUILD 把 anisync_core.dll 拷到 exe 旁边，macOS 靠
+  # embed_core.sh 把 dylib 塞进 Contents/Frameworks/，Android 靠 jniLibs 里的 .so
+  # 被 AGP 打进 APK。而 CMake 的 ANISYNC_REQUIRE_CORE 默认是 OFF：**库不在只告警、
+  # 构建照样成功**，拿到的是一个能装、能启动、一调引擎就崩的包。所以每一步之后都
+  # 拿精确路径断言一次，不采信任何退出码。
+  #
+  # 产物名以 docs/build.md 的那张表为唯一权威，一律**精确名**断言：
+  #   AniSync-GUI-<版本>-windows-x64.zip / -macos-<arch>.zip / -android-<abi>.apk
+  # （<abi> 是 arm64-v8a 或 x86_64，与 jniLibs/<abi>/ 的目录名逐字一致；
+  #  -Arch amd64 产出的是 …-android-x86_64.apk，不是笔误，映射见 docs/build.md。）
+  # 这里没有、也不许出现 *.exe / *.app / *.apk 通配：通配会把「名字被改错了」这件事
+  # 静默吞掉（t7/t8 刚改过产物名，这正是最容易被吞的一类回归）。
+  # windows-x64 与 CLI 的 amd64 不一致是有意的，见 docs/build.md。
+  # ────────────────────────────────────────────────────────────────────────
+  gui-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '${{ env.FLUTTER_VERSION }}'
+          cache: true
+
+      - name: 读版本号
+        shell: bash
+        run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      # 1) 先备引擎库。windows/amd64 是 GUI 唯一签约的 Windows 目标。
+      - name: 备引擎库（windows/amd64）
+        shell: pwsh
+        run: ./scripts/build-core.ps1 -OS windows -Arch amd64
+
+      - name: 校验引擎库精确存在
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="app/build/native/windows-amd64/anisync_core.dll"
+          if [ ! -f "$lib" ]; then
+            echo "✗ 未产出 $lib"
+            find app/build/native -type f || true
+            exit 1
+          fi
+          ls -lh "$lib"
+
+      # 2) 编 GUI。引擎已经备好，所以 -SkipCore（避免重复编）。
+      - name: 编 GUI（windows/amd64）
+        shell: pwsh
+        run: ./scripts/build-app.ps1 -OS windows -Arch amd64 -SkipCore
+
+      # 3) 门禁：exe 精确存在，且 dll 真的被 CMake 拷到了 exe 同目录。
+      #    dll 缺了这一步就红 —— 那正是「能装但连不上自己引擎」的形态。
+      - name: 校验 exe 与同目录的 dll
+        shell: bash
+        run: |
+          set -euo pipefail
+          rel="app/build/windows/x64/runner/Release"
+          exe="$rel/AniSync.exe"
+          dll="$rel/anisync_core.dll"
+          if [ ! -f "$exe" ]; then
+            echo "✗ 未产出 $exe（产物名是契约，按精确名查找，不许改成通配）"
+            find "$rel" -type f 2>/dev/null || true
+            exit 1
+          fi
+          if [ ! -f "$dll" ]; then
+            echo "✗ $dll 不在 exe 同目录：CMake 的 POST_BUILD 没拷过去，装上就是死包"
+            find "$rel" -type f 2>/dev/null || true
+            exit 1
+          fi
+          ls -lh "$exe" "$dll"
+
+      # 4) 打包。脚本自己读 VERSION，产物落 dist/。
+      - name: 出包（windows-x64）
+        shell: pwsh
+        run: ./scripts/package.ps1 -OS windows -Arch amd64
+
+      - name: 校验 zip 精确存在
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="dist/AniSync-GUI-${VERSION}-windows-x64.zip"
+          if [ ! -f "$zip" ]; then
+            echo "✗ 未产出 $zip"
+            find dist -maxdepth 1 -type f || true
+            exit 1
+          fi
+          ls -lh "$zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AniSync-GUI-windows-x64
+          path: dist/AniSync-GUI-${{ env.VERSION }}-windows-x64.zip
+          if-no-files-found: error
+
+  gui-macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64 }
+          - { arch: amd64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '${{ env.FLUTTER_VERSION }}'
+          cache: true
+
+      - name: 读版本号
+        shell: bash
+        run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      # 1) 先备引擎库。embed_core.sh 会去 app/build/native/macos-<arch>/ 找它，
+      #    目录名与这里的 -Arch 一一对应（arm64 / amd64）。
+      - name: 备引擎库（macos/${{ matrix.arch }}）
+        shell: pwsh
+        run: ./scripts/build-core.ps1 -OS macos -Arch '${{ matrix.arch }}'
+
+      - name: 校验引擎库精确存在且架构正确
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="app/build/native/macos-${{ matrix.arch }}/libanisync_core.dylib"
+          if [ ! -f "$lib" ]; then
+            echo "✗ 未产出 $lib"
+            find app/build/native -type f || true
+            exit 1
+          fi
+          ls -lh "$lib"
+          file "$lib"
+          otool -hv "$lib" | tail -n +2
+          # 架构门禁：编成宿主架构顶包是本平台最容易犯的错（macos-latest 是 arm64，
+          # 而 matrix 里还有 amd64 那一格）。
+          expect="x86_64"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then expect="arm64"; fi
+          if ! lipo -info "$lib" | grep -q "$expect"; then
+            echo "✗ $lib 不是 $expect：$(lipo -info "$lib")"
+            exit 1
+          fi
+
+      # 2) 编 GUI。
+      - name: 编 GUI（macos/${{ matrix.arch }}）
+        shell: pwsh
+        run: ./scripts/build-app.ps1 -OS macos -Arch '${{ matrix.arch }}' -SkipCore
+
+      # 3) 门禁：bundle 精确存在、可执行文件在、dylib 真的被 embed 进去了。
+      - name: 校验 bundle 与嵌入的 dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="app/build/macos/Build/Products/Release/AniSync.app"
+          if [ ! -d "$app" ]; then
+            echo "✗ 未产出 $app（产物名是契约，按精确名查找，不许改成通配）"
+            ls -la "app/build/macos/Build/Products/Release" 2>/dev/null || true
+            exit 1
+          fi
+          exe="$app/Contents/MacOS/AniSync"
+          dylib="$app/Contents/Frameworks/libanisync_core.dylib"
+          if [ ! -f "$exe" ]; then
+            echo "✗ $exe 不在：PRODUCT_NAME 不是 AniSync（见 docs/build.md）"
+            exit 1
+          fi
+          if [ ! -f "$dylib" ]; then
+            echo "✗ $dylib 不在：embed_core.sh 没把引擎塞进 Contents/Frameworks/，装上就崩"
+            find "$app" -type f || true
+            exit 1
+          fi
+          lipo -info "$exe"
+          lipo -info "$dylib"
+          ls -lh "$exe" "$dylib"
+
+      # 4) 打包。
+      - name: 出包（macos-${{ matrix.arch }}）
+        shell: pwsh
+        run: ./scripts/package.ps1 -OS macos -Arch '${{ matrix.arch }}'
+
+      - name: 校验 zip 精确存在
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="dist/AniSync-GUI-${VERSION}-macos-${{ matrix.arch }}.zip"
+          if [ ! -f "$zip" ]; then
+            echo "✗ 未产出 $zip"
+            find dist -maxdepth 1 -type f || true
+            exit 1
+          fi
+          ls -lh "$zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AniSync-GUI-macos-${{ matrix.arch }}
+          path: dist/AniSync-GUI-${{ env.VERSION }}-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  gui-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, abi: arm64-v8a }
+          - { arch: amd64, abi: x86_64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '${{ env.FLUTTER_VERSION }}'
+          cache: true
+
+      # ubuntu runner 预装 Android SDK 与 NDK，路径就在这个环境变量里。
+      - name: 校验 Android NDK 可用
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_NDK_LATEST_HOME:-}" ]; then
+            echo "✗ ANDROID_NDK_LATEST_HOME 为空，runner 上没有预装 NDK"
+            ls -d "${ANDROID_HOME}"/ndk/* 2>/dev/null || true
+            exit 1
+          fi
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+
+      - name: 读版本号
+        shell: bash
+        run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - name: 备引擎库（android/${{ matrix.arch }}）
+        shell: pwsh
+        run: ./scripts/build-core.ps1 -OS android -Arch '${{ matrix.arch }}' -Ndk $env:ANDROID_NDK_LATEST_HOME
+
+      - name: 校验引擎库精确存在且是 Android 目标
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="app/build/native/android-${{ matrix.arch }}/libanisync_core.so"
+          if [ ! -f "$lib" ]; then
+            echo "✗ 未产出 $lib"
+            find app/build/native -type f || true
+            exit 1
+          fi
+          file "$lib"
+          if ! file "$lib" | grep -qi 'android\|aarch64\|x86-64'; then
+            echo "✗ $lib 看起来不像 Android 目标产物"
+            exit 1
+          fi
+          ls -lh "$lib"
+
+      # 最容易漏的一步：.so 必须先落进 jniLibs，AGP 才会把它打进 APK。
+      # t6 只配了 jniLibs.srcDirs，没有任何东西负责在构建之前把 .so 放进去。
+      # 落完要**校验它真在那个目录里**，而且要校验内容一致（空文件 / 上次残留都不算）。
+      - name: 落进 jniLibs 并校验
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="app/build/native/android-${{ matrix.arch }}/libanisync_core.so"
+          dst="app/android/app/src/main/jniLibs/${{ matrix.abi }}/libanisync_core.so"
+          mkdir -p "$(dirname "$dst")"
+          cp -f "$src" "$dst"
+          if [ ! -f "$dst" ]; then echo "✗ $dst 不存在"; exit 1; fi
+          if [ ! -s "$dst" ]; then echo "✗ $dst 是空文件"; exit 1; fi
+          if ! cmp -s "$src" "$dst"; then echo "✗ $dst 与 $src 内容不一致"; exit 1; fi
+          ls -lh "$dst"
+
+      - name: 编 GUI（android/${{ matrix.arch }}）
+        shell: pwsh
+        run: ./scripts/build-app.ps1 -OS android -Arch '${{ matrix.arch }}' -SkipCore
+
+      # 门禁：APK 存在，而且 lib/<abi>/libanisync_core.so 真的在 APK 里。
+      # 只看「APK 出来了」是不够的 —— 引擎没被打进去的 APK 一样能装能启动。
+      - name: 校验 APK 里真的带着引擎
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/app/outputs/flutter-apk/app-release.apk"
+          if [ ! -f "$apk" ]; then
+            echo "✗ 未产出 $apk（不加 --split-per-abi 时就是这个精确名）"
+            find app/build/app/outputs -type f 2>/dev/null || true
+            exit 1
+          fi
+          ls -lh "$apk"
+          if ! unzip -l "$apk" | grep -q "lib/${{ matrix.abi }}/libanisync_core.so"; then
+            echo "✗ APK 里没有 lib/${{ matrix.abi }}/libanisync_core.so —— 引擎没被打进包"
+            unzip -l "$apk" | grep 'lib/' || true
+            exit 1
+          fi
+          unzip -l "$apk" | grep "lib/${{ matrix.abi }}/libanisync_core.so"
+
+      - name: 出包（android/${{ matrix.abi }}）
+        shell: pwsh
+        run: ./scripts/package.ps1 -OS android -Arch '${{ matrix.arch }}'
+
+      - name: 校验 apk 精确存在
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 产物名自带 ABI，两个 ABI 各一个发布物、互不撞名。名字里用的是 **ABI 名**
+          # （arm64-v8a / x86_64），不是 -Arch 的 arm64 / amd64：那两个字符串要和
+          # jniLibs/<abi>/ 的目录名逐字一致，映射见 docs/build.md。
+          out="dist/AniSync-GUI-${VERSION}-android-${{ matrix.abi }}.apk"
+          if [ ! -f "$out" ]; then
+            echo "✗ 未产出 $out"
+            find dist -maxdepth 1 -type f || true
+            exit 1
+          fi
+          ls -lh "$out"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AniSync-GUI-android-${{ matrix.abi }}
+          path: dist/AniSync-GUI-${{ env.VERSION }}-android-${{ matrix.abi }}.apk
+          if-no-files-found: error

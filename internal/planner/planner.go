@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zzzwannasleep/anisync/internal/assapi"
@@ -38,6 +39,22 @@ type Options struct {
 	Concurrency int
 	Limit       int    // 每个实例最多处理多少条订阅（调试用，0 表示不限）
 	CachePath   string // 站点数据缓存文件；留空则不缓存
+	// Progress 报告计划生成的进度（已处理条数 / 总条数 / 人话标签）。
+	//
+	// 为 nil 时一个字节都不多发：CLI 与常驻循环照旧，只有桥接层会挂上它。
+	// 并发调用是它的常态（订阅是并发处理的），实现方自己保证安全。
+	Progress Progress
+}
+
+// Progress 是计划生成的进度回调。
+type Progress func(done, total int, label string)
+
+// report 是带 nil 保护的进度上报。
+func (o Options) report(done, total int, label string) {
+	if o.Progress == nil {
+		return
+	}
+	o.Progress(done, total, label)
 }
 
 // Change 是一条字段级差异。
@@ -206,6 +223,8 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	var mu sync.Mutex
 	results := make([]Action, 0, len(jobs))
 	skipped := make([]SkippedReason, 0)
+	var planned int64
+	opts.report(0, len(jobs), "正在按规则挑选主副 RSS")
 
 	for _, item := range jobs {
 		item := item
@@ -217,12 +236,14 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 
 			action := b.planOneGuarded(ctx, item.instance, item.ani)
 			mu.Lock()
-			defer mu.Unlock()
 			if action.Kind == "error" {
 				skipped = append(skipped, SkippedReason{Instance: item.instance.Name, Title: action.Title, Reason: action.Reason})
-				return
+			} else {
+				results = append(results, action)
 			}
-			results = append(results, action)
+			mu.Unlock()
+			done := int(atomic.AddInt64(&planned, 1))
+			opts.report(done, len(jobs), fmt.Sprintf("已处理 %d/%d 条订阅", done, len(jobs)))
 		}()
 	}
 	wg.Wait()
@@ -231,6 +252,7 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 	// 发现结果被当成自动生成的 targets，走的是下面同一条新增链路。
 	targets := cfg.Targets
 	if opts.Discover {
+		opts.report(0, 0, "正在扫描本季在放的番剧")
 		found, err := discover.Discover(ctx, discover.Options{
 			Sources:   cfg.Discover.SourceList(),
 			BgmUser:   cfg.Discover.BgmUser,
@@ -303,6 +325,10 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 
 		addSem := make(chan struct{}, opts.Concurrency)
 		var addWg sync.WaitGroup
+		var added int64
+		if len(addJobs) > 0 {
+			opts.report(0, len(addJobs), fmt.Sprintf("正在新增订阅 0/%d", len(addJobs)))
+		}
 		for _, item := range addJobs {
 			item := item
 			addWg.Add(1)
@@ -312,20 +338,21 @@ func Build(ctx context.Context, cfg *config.Config, opts Options) (*Plan, error)
 				defer func() { <-addSem }()
 
 				action := b.planTargetGuarded(ctx, item.instance, item.target)
-				if action == nil {
-					return
+				if action != nil {
+					mu.Lock()
+					if action.Kind == "error" {
+						skipped = append(skipped, SkippedReason{
+							Instance: item.instance.Name,
+							Title:    firstNonEmpty(item.target.Title, item.target.JPTitle, item.target.BgmID),
+							Reason:   action.Reason,
+						})
+					} else {
+						results = append(results, *action)
+					}
+					mu.Unlock()
 				}
-				mu.Lock()
-				defer mu.Unlock()
-				if action.Kind == "error" {
-					skipped = append(skipped, SkippedReason{
-						Instance: item.instance.Name,
-						Title:    firstNonEmpty(item.target.Title, item.target.JPTitle, item.target.BgmID),
-						Reason:   action.Reason,
-					})
-					return
-				}
-				results = append(results, *action)
+				done := int(atomic.AddInt64(&added, 1))
+				opts.report(done, len(addJobs), fmt.Sprintf("正在新增订阅 %d/%d", done, len(addJobs)))
 			}()
 		}
 		addWg.Wait()

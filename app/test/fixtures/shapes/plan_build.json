@@ -1,0 +1,92 @@
+{
+  "data": {
+    "plan": {
+      "actions": [
+        {
+          "aniId": "1234",
+          "changes": [
+            {
+              "field": "url",
+              "from": "https://old.example.com/rss.xml",
+              "to": "https://anibt.net/rss/anime.xml?bgmId=665390&groupSlug=lh"
+            },
+            {
+              "field": "subgroup",
+              "from": "旧组",
+              "to": "猎户发布组"
+            },
+            {
+              "field": "season",
+              "from": "1",
+              "to": "2"
+            },
+            {
+              "field": "standbyRssList",
+              "from": "ANi(偏移-12)",
+              "to": ""
+            }
+          ],
+          "instance": "追番库",
+          "kind": "update",
+          "profile": "收藏",
+          "target": "冰之城墙",
+          "title": "冰之城墙 (2026) [tmdbid=283428]"
+        },
+        {
+          "aniId": "0",
+          "changes": [
+            {
+              "field": "url",
+              "from": "https://old.example.com/rss2.xml",
+              "to": "https://anibt.net/rss/anime.xml?bgmId=400602&groupSlug=mgn"
+            },
+            {
+              "field": "subgroup",
+              "from": "",
+              "to": "喵萌奶茶屋"
+            }
+          ],
+          "instance": "追番库",
+          "kind": "update",
+          "profile": "收藏",
+          "title": "药屋少女的呢喃"
+        }
+      ],
+      "schemes": [
+        {
+          "denyCount": 2,
+          "instance": "追番库",
+          "maxStandby": 12,
+          "profile": "收藏",
+          "ruleCount": 5,
+          "ruleFiles": [
+            {
+              "count": 4,
+              "kind": "primary",
+              "path": "<WORKSPACE>/raws.yaml"
+            },
+            {
+              "count": 2,
+              "kind": "deny",
+              "path": "<WORKSPACE>/deny.yaml"
+            }
+          ],
+          "siteOrder": [
+            "anibt"
+          ]
+        }
+      ],
+      "siteInstance": "追番库",
+      "sites": [
+        {
+          "candidates": 2,
+          "failures": 0,
+          "requests": 2,
+          "site": "anibt"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  "ok": true
+}

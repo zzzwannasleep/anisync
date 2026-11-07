@@ -1,0 +1,210 @@
+{
+  "config": {
+    "discover": {
+      "days": 180,
+      "enabled": false,
+      "limit": 50,
+      "sources": [
+        "yuc"
+      ]
+    },
+    "fileRules": [
+      {
+        "count": 4,
+        "kind": "primary",
+        "path": "<WORKSPACE>/raws.yaml"
+      },
+      {
+        "count": 2,
+        "kind": "deny",
+        "path": "<WORKSPACE>/deny.yaml"
+      }
+    ],
+    "instances": [
+      {
+        "apiKey": "abcdefghijklmnop",
+        "baseUrl": "https://ass.example.com/",
+        "name": "追番库",
+        "profile": "收藏"
+      }
+    ],
+    "listen": "127.0.0.1:51837",
+    "profiles": [
+      {
+        "fileRules": [
+          {
+            "count": 4,
+            "kind": "primary",
+            "path": "<WORKSPACE>/raws.yaml"
+          },
+          {
+            "count": 2,
+            "kind": "deny",
+            "path": "<WORKSPACE>/deny.yaml"
+          }
+        ],
+        "name": "收藏",
+        "rules": {
+          "deny": null,
+          "denyFiles": [
+            "deny.yaml"
+          ],
+          "maxStandby": 12,
+          "primary": [
+            {
+              "in": "any",
+              "match": ".+",
+              "name": "全都要",
+              "priority": 100,
+              "scope": "both"
+            }
+          ],
+          "primaryFiles": [
+            "raws.yaml"
+          ]
+        },
+        "sources": {
+          "order": [
+            "anibt"
+          ]
+        }
+      }
+    ],
+    "proxy": "",
+    "rules": {
+      "deny": [
+        {
+          "match": "合集",
+          "why": "不要合集"
+        }
+      ],
+      "denyFiles": [
+        "deny.yaml"
+      ],
+      "maxStandby": 1,
+      "primary": [
+        {
+          "in": "group",
+          "match": "(?i)^ani\\b",
+          "name": "放流组优先",
+          "priority": 10,
+          "scope": "main"
+        }
+      ],
+      "primaryFiles": [
+        "raws.yaml"
+      ]
+    },
+    "sources": {
+      "cacheMinutes": 720,
+      "instance": "追番库",
+      "order": [
+        "anibt"
+      ],
+      "stopOnFirstMatch": false,
+      "timeoutSeconds": 25
+    },
+    "sync": {
+      "addMissing": false,
+      "intervalMinutes": 0,
+      "preview": false
+    },
+    "targets": [
+      {
+        "bgmId": "665390",
+        "season": 2,
+        "title": "冰之城墙"
+      }
+    ]
+  },
+  "path": "<WORKSPACE>/config.yaml",
+  "ruleFiles": [
+    {
+      "count": 4,
+      "kind": "primary",
+      "path": "<WORKSPACE>/raws.yaml"
+    },
+    {
+      "count": 2,
+      "kind": "deny",
+      "path": "<WORKSPACE>/deny.yaml"
+    }
+  ],
+  "views": {
+    "instances": [
+      {
+        "apiKey": "abcdef…op",
+        "baseUrl": "https://ass.example.com/",
+        "enabled": true,
+        "hasApiKey": true,
+        "name": "追番库",
+        "profile": "收藏",
+        "profileLabel": "收藏",
+        "scheme": {
+          "denyCount": 2,
+          "instance": "追番库",
+          "maxStandby": 12,
+          "profile": "收藏",
+          "ruleCount": 5,
+          "ruleFiles": [
+            {
+              "count": 4,
+              "kind": "primary",
+              "path": "<WORKSPACE>/raws.yaml"
+            },
+            {
+              "count": 2,
+              "kind": "deny",
+              "path": "<WORKSPACE>/deny.yaml"
+            }
+          ],
+          "siteOrder": [
+            "anibt"
+          ]
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "收藏",
+        "ruleFiles": [
+          {
+            "count": 4,
+            "kind": "primary",
+            "path": "<WORKSPACE>/raws.yaml"
+          },
+          {
+            "count": 2,
+            "kind": "deny",
+            "path": "<WORKSPACE>/deny.yaml"
+          }
+        ],
+        "rules": {
+          "deny": [],
+          "denyFiles": [
+            "deny.yaml"
+          ],
+          "maxStandby": 12,
+          "primary": [
+            {
+              "in": "any",
+              "match": ".+",
+              "name": "全都要",
+              "priority": 100,
+              "scope": "both"
+            }
+          ],
+          "primaryFiles": [
+            "raws.yaml"
+          ]
+        },
+        "sources": {
+          "order": [
+            "anibt"
+          ]
+        }
+      }
+    ]
+  },
+  "warnings": []
+}

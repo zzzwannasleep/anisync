@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/zzzwannasleep/anisync/internal/fsutil"
 	"github.com/zzzwannasleep/anisync/internal/workdir"
 )
 
@@ -489,6 +490,19 @@ func (d Discover) MaxNew() int {
 	return DefaultDiscoverLimit
 }
 
+// Node 是本机 HTTP 节点的鉴权配置。
+//
+// 用指针 + omitempty：没配过的配置里**不会多出** `node:` 这一行，
+// 于是「老配置保存一次会不会被改」这个问题在分方案时就已经回答过了 ——
+// 保持同一个答案。设了 token 之后它才会落盘。
+type Node struct {
+	// Token 是 X-AniSync-Token 的值。留空 = 不带鉴权。
+	//
+	// 绑非回环地址时**必须**非空：HTTP 节点能改写订阅，
+	// 裸奔在网络上等于把 ANI-RSS 实例交出去。这条规则由 webui 强制，不靠自觉。
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+}
+
 // Config 是 AniSync 的完整配置。
 type Config struct {
 	Listen string `yaml:"listen" json:"listen"`
@@ -509,6 +523,8 @@ type Config struct {
 	Targets  []Target  `yaml:"targets" json:"targets"`
 	Discover Discover  `yaml:"discover,omitempty" json:"discover,omitempty"`
 	Sync     Sync      `yaml:"sync" json:"sync"`
+	// Node 是 HTTP 节点的鉴权配置；没配过时整个键都不写出。
+	Node *Node `yaml:"node,omitempty" json:"node,omitempty"`
 
 	path string
 	// filePrimary / fileDeny 是外置规则文件读出来的条目。
@@ -573,8 +589,10 @@ func Load(path string) (*Config, error) {
 	cfg := Default()
 	cfg.path = path
 
-	raw, err := os.ReadFile(path)
+	raw, err := readConfigFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		// 「真的不存在」是正常状态（首次运行），行为一个字都不改：
+		// 返回默认配置，让 init 流程照常走。
 		return cfg, nil
 	}
 	if err != nil {
@@ -593,6 +611,26 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// readConfigFile 读配置文件，抹平「文件正在被另一个进程替换」的窗口。
+//
+// 为什么必须是带重试的读：Windows 上 `MoveFileEx(REPLACE_EXISTING)` 是先让目标
+// 让位、再改名，目标名字会有一小段时间**根本不存在**。裸 os.ReadFile 撞上它
+// 会拿到 ERROR_FILE_NOT_FOUND —— 而那正好等价于「配置不存在」，
+// 于是 Load 静默返回一份**默认配置**。
+//
+// 代价不只是「拿错表」：`status` 会拿回落后的表继续输出，而用户看 `status`
+// 就是为了确认「它还活着、跑对了」。一个静默退化成默认配置的 status 比报错更坏。
+//
+// **用短预算（AccessRetryBudget），不用 2s 的锁预算**：这个函数在交互式命令
+// （status / check）与每一次 daemon 轮次的关键路径上，而「配置真的不存在」
+// 是完全正常的状态。长预算会让一条本该瞬间返回的命令凭空等 2 秒。
+// 要抹平的是「正在被替换」，不是「真的没有」——
+// 这两件事从错误码上分不出来，所以只能用短预算把它们一起覆盖，
+// 然后接受那 250ms 的上界（这也是 t15 明确拍板的取舍）。
+func readConfigFile(path string) ([]byte, error) {
+	return fsutil.ReadFileWithin(path, fsutil.AccessRetryBudget)
+}
+
 // ReloadLayout 重新读一遍配置文件，只取回节点树（注释布局），不动结构体字段。
 //
 // Web 设置页保存时构造的是一份全新 Config（来自 JSON），必须先把原文件的节点树
@@ -604,7 +642,9 @@ func (c *Config) ReloadLayout() error {
 	if c.path == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(c.path)
+	// 与 Load 同一条读路径：这里撞上「正在被替换」的代价是**注释布局丢了**，
+	// 而保存时没有布局可继承就会把 config.yaml 的注释整片冲掉。
+	raw, err := readConfigFile(c.path)
 	if err != nil {
 		return nil
 	}
@@ -847,6 +887,21 @@ func (c *Config) Normalize() {
 	c.Discover.BgmUser = strings.TrimSpace(c.Discover.BgmUser)
 	c.Discover.Days = c.Discover.WindowDays()
 	c.Discover.Limit = c.Discover.MaxNew()
+	// 空的 node 块等于没配：留着一个 `node: {}` 只会让配置看起来像开了节点。
+	if c.Node != nil {
+		c.Node.Token = strings.TrimSpace(c.Node.Token)
+		if c.Node.Token == "" {
+			c.Node = nil
+		}
+	}
+}
+
+// NodeToken 返回生效的节点鉴权 token；没配时为空。
+func (c *Config) NodeToken() string {
+	if c == nil || c.Node == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Node.Token)
 }
 
 // validListen 校验监听地址：必须是 host:port，且端口合法。
@@ -1096,6 +1151,12 @@ const fileHeader = "# AniSync 配置：多 ANI-RSS 实例 + 主副 RSS 自动打
 //
 // 走的是「合并」而不是「重写」：新值合并到上次读到的节点树上，
 // 注释、键序、引号风格都保留。样例配置的注释就是文档，不能保存一次就没了。
+//
+// 写入走 fsutil.AtomicWriteFile（临时文件 + 改名 + 重试），**只换写入方式，
+// 合并在前的逻辑一个字都不动**。理由：编辑器或另一个 `status` 正打开着
+// config.yaml 时，裸 os.WriteFile 在 Windows 上会直接失败（32/5），
+// 用户点一次「保存」得到一条红条，重试一次又好了 —— 正是最难被报告的那类故障。
+// 顺带拿到「读者永远看不到写了一半的文件」这条性质。
 func (c *Config) Save() error {
 	if c.path == "" {
 		c.path = DefaultPath()
@@ -1108,10 +1169,11 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(c.path, out, 0o600); err != nil {
+	// 权限 0600：里面有 API Key。AtomicWriteFile 用它建临时文件，
+	// 改名之后目标文件就是这个权限（原子替换不会放宽它）。
+	if err := fsutil.AtomicWriteFile(c.path, out, 0o600); err != nil {
 		return err
 	}
-	_ = os.Chmod(c.path, 0o600)
 	// 保存完自己就是新的「原文件」。不更新的话，连着保存两次时第二次就没注释可合并了。
 	c.rawNode = parseLayout(out)
 	return nil

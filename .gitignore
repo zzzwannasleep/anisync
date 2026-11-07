@@ -3,6 +3,11 @@
 /AniSync
 /AniSync.exe
 
+# 根级 /build/ 是 Go c-shared 与原生库的落点（`-buildmode=c-shared -o build/native/...`），
+# 动辄十几 MB 的 dll/dylib/so 不该入库。`app/build/` 另由 Flutter 自己生成的
+# app/.gitignore 覆盖，这里不需要重复写。
+/build/
+
 # 运行期文件（配置里有 API Key，缓存是本地数据，都不入库）
 /config.yaml
 /data/
@@ -15,6 +20,10 @@
 # branding/build.py 跑过之后留下的 Python 缓存，不入库
 __pycache__/
 *.pyc
+
+# 验证残留：探针二进制 / e2e 工作区 / 基线对比产物。不是产品的一部分，
+# 而且里面有几十 MB 的可执行文件——推上去会把仓库撑坏，也会让「验证现场」被误当成源码。
+/.test-run/
 
 # branding/png/ 是 build.py 从同目录 SVG 渲染出来的派生图（1024 再缩到各档），
 # 全部可重新生成，不入库。设计源（SVG / build.py / PROMPTS.md）和几份成品

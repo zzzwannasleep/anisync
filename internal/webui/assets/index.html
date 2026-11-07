@@ -2051,7 +2051,18 @@ async function save(btn) {
   try {
     const res = await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect()) });
     if (res.error) { setStatus(res.error, 'err'); setSaveState('保存失败', 'err'); toast(res.error, 'err'); return false; }
+    // 服务端现在**总是落盘**，校验没过时回 valid:false + errors（契约 §7.2：
+    // 增量编辑是交互式界面的基本用法，不该逼用户先把配置写完整）。
+    // 但「存下去了」不等于「没问题」——不把 errors 显示出来，
+    // 用户就会以为「保存成功 = 配置能用」，而它其实会拦住 plan / sync。
+    const problems = (res.errors || []).map((e) => (e && e.message) ? e.message : '').filter(Boolean);
     render();
+    if (res.valid === false && problems.length) {
+      markClean('已保存（配置未通过校验）');
+      setStatus('已保存，但配置没过校验：' + problems.join('；'), 'err');
+      toast('已保存，但配置需要修：' + problems[0], 'err');
+      return true;
+    }
     markClean('已保存');
     setStatus('');
     if (btn) {

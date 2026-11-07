@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
@@ -24,13 +25,43 @@ const (
 	DataDirName = "data"
 )
 
+// rootMu / root 是显式指定的工作区。
+//
+// 桌面端不需要它：可执行文件同目录就是全部。移动端（Android/iOS）没有这个前提
+// —— APK 目录只读，所以 Flutter 侧先调 SetRoot 把工作区钉到应用私有目录。
+// 没人调用时 root 为空，Dir() 走下面那条原有路径，逐字节不变。
+var (
+	rootMu sync.RWMutex
+	root   string
+)
+
+// SetRoot 显式指定工作区目录（移动端/测试用）。空串表示恢复默认行为。
+func SetRoot(dir string) {
+	rootMu.Lock()
+	defer rootMu.Unlock()
+	root = strings.TrimSpace(dir)
+}
+
+// Root 返回显式指定的工作区；没有指定时第二个返回值为 false。
+func Root() (string, bool) {
+	rootMu.RLock()
+	defer rootMu.RUnlock()
+	if root == "" {
+		return "", false
+	}
+	return root, true
+}
+
 // Dir 返回工作目录。
 //
-// 正常情况下就是可执行文件所在目录。两个例外：
+// 设过 SetRoot 就是它；否则正常情况下就是可执行文件所在目录。两个例外：
 //   - `go run` 会把二进制放进临时构建目录，此时回退到当前工作目录，免得开发时把配置写进系统临时区；
 //   - macOS 的 .app 是目录包，可执行文件在 AniSync.app/Contents/MacOS/ 里，
 //     配置写在包内部会被当成篡改包内容，因此上浮到 .app 所在目录。
 func Dir() string {
+	if explicit, ok := Root(); ok {
+		return explicit
+	}
 	exe, err := os.Executable()
 	if err == nil {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {

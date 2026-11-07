@@ -1,0 +1,83 @@
+{
+  "items": [
+    {
+      "bgmId": "665390",
+      "bgmUrl": "https://bgm.tv/subject/665390",
+      "enable": true,
+      "id": "1234",
+      "image": "https://lain.bgm.tv/pic/cover/m/xx.jpg",
+      "issues": [],
+      "key": "id:1234",
+      "main": {
+        "group": "旧组",
+        "title": "冰之城墙 (2026) [tmdbid=283428]",
+        "url": "https://old.example.com/rss.xml"
+      },
+      "offset": 0,
+      "raw": {
+        "bgmUrl": "https://bgm.tv/subject/665390",
+        "enable": true,
+        "id": "1234",
+        "image": "https://lain.bgm.tv/pic/cover/m/xx.jpg",
+        "offset": 0,
+        "season": 1,
+        "standbyRssList": [
+          {
+            "label": "ANi",
+            "offset": -12,
+            "url": "https://anibt.net/rss/anime.xml?bgmId=665390&groupSlug=ani"
+          }
+        ],
+        "subgroup": "旧组",
+        "title": "冰之城墙 (2026) [tmdbid=283428]",
+        "url": "https://old.example.com/rss.xml"
+      },
+      "season": 1,
+      "standby": [
+        {
+          "group": "ANi",
+          "offset": -12,
+          "url": "https://anibt.net/rss/anime.xml?bgmId=665390&groupSlug=ani"
+        }
+      ],
+      "standbyOffset": -12,
+      "title": "冰之城墙 (2026) [tmdbid=283428]"
+    },
+    {
+      "bgmId": "400602",
+      "bgmUrl": "https://bgm.tv/subject/400602",
+      "enable": false,
+      "id": "0",
+      "issues": [
+        "season 不是数字（原值：第二季），已置空",
+        "offset 不是数字（原值：map[nested:true]），已置空",
+        "副 RSS 第 1 条不是对象，已跳过"
+      ],
+      "key": "bgm:400602",
+      "main": {
+        "title": "药屋少女的呢喃",
+        "url": "https://old.example.com/rss2.xml"
+      },
+      "offset": null,
+      "raw": {
+        "bgmUrl": "https://bgm.tv/subject/400602",
+        "id": "0",
+        "offset": {
+          "nested": true
+        },
+        "season": "第二季",
+        "standbyRssList": [
+          "不是对象"
+        ],
+        "title": "药屋少女的呢喃",
+        "url": "https://old.example.com/rss2.xml"
+      },
+      "season": null,
+      "standby": [],
+      "standbyOffset": null,
+      "title": "药屋少女的呢喃"
+    }
+  ],
+  "name": "追番库",
+  "total": 2
+}

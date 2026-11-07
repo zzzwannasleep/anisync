@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "ops": [
+    {
+      "name": "backup.create",
+      "group": "backup",
+      "summary": "导出订阅存档",
+      "async": false
+    },
+    {
+      "name": "backup.list",
+      "group": "backup",
+      "summary": "列出存档",
+      "async": false
+    },
+    {
+      "name": "backup.restore",
+      "group": "backup",
+      "summary": "用存档还原订阅",
+      "async": true
+    },
+    {
+      "name": "bgm.search",
+      "group": "bgm",
+      "summary": "按关键字搜 Bangumi 条目",
+      "async": false
+    },
+    {
+      "name": "config.default",
+      "group": "config",
+      "summary": "默认配置（新建工作区用）",
+      "async": false
+    },
+    {
+      "name": "config.get",
+      "group": "config",
+      "summary": "读配置 + 界面要用的派生视图",
+      "async": false
+    },
+    {
+      "name": "config.sample",
+      "group": "config",
+      "summary": "配置样例 YAML 原文",
+      "async": false
+    },
+    {
+      "name": "config.save",
+      "group": "config",
+      "summary": "保存配置（保住注释与键序）",
+      "async": false
+    },
+    {
+      "name": "config.validate",
+      "group": "config",
+      "summary": "校验一份配置，返回逐条错误",
+      "async": false
+    },
+    {
+      "name": "core.init",
+      "group": "core",
+      "summary": "切换工作区：读配置、钉住 data 目录",
+      "async": false
+    },
+    {
+      "name": "core.ops",
+      "group": "core",
+      "summary": "列出全部 op（名字 / 分组 / 简介 / 是否异步）",
+      "async": false
+    },
+    {
+      "name": "core.version",
+      "group": "core",
+      "summary": "程序版本、契约版本、平台",
+      "async": false
+    },
+    {
+      "name": "discover.apply",
+      "group": "discover",
+      "summary": "把选中的番剧写进 targets",
+      "async": false
+    },
+    {
+      "name": "discover.autoAdd",
+      "group": "discover",
+      "summary": "自动发现并新增订阅",
+      "async": true
+    },
+    {
+      "name": "discover.list",
+      "group": "discover",
+      "summary": "本季新番：有哪些还没加",
+      "async": false
+    },
+    {
+      "name": "instance.list",
+      "group": "instance",
+      "summary": "实例列表（含生效方案）",
+      "async": false
+    },
+    {
+      "name": "instance.subscriptions",
+      "group": "instance",
+      "summary": "读一个实例的订阅列表",
+      "async": false
+    },
+    {
+      "name": "instance.test",
+      "group": "instance",
+      "summary": "测试一个实例的连通性",
+      "async": false
+    },
+    {
+      "name": "job.cancel",
+      "group": "job",
+      "summary": "取消一个任务",
+      "async": false
+    },
+    {
+      "name": "job.get",
+      "group": "job",
+      "summary": "取一个任务",
+      "async": false
+    },
+    {
+      "name": "job.list",
+      "group": "job",
+      "summary": "最近的任务",
+      "async": false
+    },
+    {
+      "name": "journal.clear",
+      "group": "journal",
+      "summary": "清空运行记录（危险动作）",
+      "async": false
+    },
+    {
+      "name": "journal.tail",
+      "group": "journal",
+      "summary": "读最近几轮运行记录",
+      "async": false
+    },
+    {
+      "name": "lease.takeover",
+      "group": "lease",
+      "summary": "接管单飞租约（危险动作）",
+      "async": false
+    },
+    {
+      "name": "log.recent",
+      "group": "log",
+      "summary": "最近 500 行日志（事件流断了兜底）",
+      "async": false
+    },
+    {
+      "name": "log.write",
+      "group": "log",
+      "summary": "客户端写一行诊断日志（只进内存缓冲，有限速）",
+      "async": false
+    },
+    {
+      "name": "plan.apply",
+      "group": "plan",
+      "summary": "执行计划",
+      "async": true
+    },
+    {
+      "name": "plan.build",
+      "group": "plan",
+      "summary": "生成打点计划（只读）",
+      "async": false
+    },
+    {
+      "name": "probe.run",
+      "group": "probe",
+      "summary": "单站点探针：看候选与命中规则",
+      "async": false
+    },
+    {
+      "name": "profile.delete",
+      "group": "profile",
+      "summary": "删除一套订阅方案",
+      "async": false
+    },
+    {
+      "name": "profile.ruleFile",
+      "group": "profile",
+      "summary": "读一个外置规则文件的内容（只读）",
+      "async": false
+    },
+    {
+      "name": "profile.upsert",
+      "group": "profile",
+      "summary": "新增 / 覆盖一套订阅方案",
+      "async": false
+    },
+    {
+      "name": "status.get",
+      "group": "status",
+      "summary": "实例与方案、租约、最近几轮（不发网络请求）",
+      "async": false
+    },
+    {
+      "name": "subscription.add",
+      "group": "subscription",
+      "summary": "新增一条订阅",
+      "async": false
+    },
+    {
+      "name": "subscription.delete",
+      "group": "subscription",
+      "summary": "删除订阅（危险动作）",
+      "async": false
+    },
+    {
+      "name": "subscription.resolve",
+      "group": "subscription",
+      "summary": "让实例把一个 RSS 解析成订阅草稿",
+      "async": false
+    },
+    {
+      "name": "subscription.set",
+      "group": "subscription",
+      "summary": "改订阅的季度 / 偏移 / 开关 / 方案",
+      "async": false
+    },
+    {
+      "name": "sync.run",
+      "group": "sync",
+      "summary": "跑一轮完整同步（抢租约 + 写实例 + 落日志）",
+      "async": true
+    }
+  ]
+}

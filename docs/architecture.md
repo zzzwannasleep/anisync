@@ -17,6 +17,7 @@ internal/rules       规则编译、打分、去重
 internal/planner     计划生成与执行
 internal/webui       本地设置页（内嵌资源，无前端构建步骤）
 internal/tray        托盘：Windows 通知区域、macOS 菜单栏
+app/                 跨平台 GUI（Flutter）：Windows / macOS / Android 的唯一图形界面
 samples/             开箱即用的配置样例
 scripts/             构建与打包脚本
 docs/                文档
@@ -152,3 +153,41 @@ Nyaa 资源最广，补 AniBT 的盲区。`animegarden` / `mikan` 走的是和 A
 **缓存只存需要的部分。** 缓存键为 `站点:番剧标识`，只保留每个字幕组最近 12 条标题样本，热度单独用 `Total` 字段承载。缓存写入是「临时文件 + rename」的原子替换，读不出来就退化成无缓存，不影响同步结果。
 
 **macOS 托盘需要 cgo。** 托盘实现按构建约束分流：`windows || (darwin && cgo)` 走 systray，其余走 stub（功能由 CLI 与 Web 设置页承担）。darwin 未开 cgo 时不会编译失败，只是没有菜单栏图标。
+
+## GUI：一份 op 契约，两种落地
+
+`app/` 里的 Flutter 应用是 Windows / macOS / Android 上的唯一图形界面。它**不含业务逻辑** ——
+所有能力都由 Go 引擎提供，而引擎有两种接法，Dart 侧对二者无感：
+
+```
+                        ┌──────────────────────────────────────────┐
+   Windows / macOS  ──► │  dart:ffi  → libanisync_core.{dll,dylib} │
+   Android          ──► │  c-shared，同一个进程内直调                │
+                        └──────────────────────────────────────────┘
+   另一台电脑 / 手机 ──►  HTTP → POST /api/v1/call（远端 AniSync serve 节点）
+```
+
+- **进程内 FFI**：Go 用 `-buildmode=c-shared` 编成动态库，`dart:ffi` 在同一进程里调用。
+  没有端口、没有子进程、没有额外的序列化层。三个平台都走这一条，也是默认路径。
+- **远端节点 HTTP**：电脑上跑 `AniSync serve`，同一组 op 通过 HTTP 暴露，手机或另一台电脑
+  用它做遥控。需要「电脑上的常驻进程持有租约并定时跑」时走这条。
+
+**两条路共用同一份 op 名、同一份 payload、同一份响应信封。** Dart 侧只有一个 `Backend`
+接口，两个实现（`FfiBackend` / `NodeBackend`），UI 层不区分自己接的是本地库还是远端节点。
+完整契约（5 个导出符号、信封形状、错误码、op 清单、事件模型、兼容规则）见
+**[`ops-api.md`](ops-api.md)** —— 那里是唯一权威，本文不复述。
+
+契约靠**对拍**而不是靠自觉守住：Go 侧 `internal/bridge` 的 `Ops()` 注册表是 op 名字的
+唯一声明处，dump 成 `app/test/fixtures/ops.json` 后由 Dart 侧的契约测试读同一份文件断言
+两边一致。字段名改了、某一边多加了 op，都会在 `flutter test` 这一步红掉，而不是等用户
+点了按钮才发现「没反应」。形状对拍（`config.get` / `instance.subscriptions` /
+`plan.build` / `status.get` 的样例响应）同理，见 `ops-api.md` §9。
+
+**为什么不是 gomobile**：`gomobile bind` 只产 Android AAR 与 iOS XCFramework，桌面端
+没有对应物；而 GUI 要覆盖 Windows / macOS / Android 三个平台且要求同一份绑定代码。
+`c-shared` + `dart:ffi` 是唯一能三个平台通吃的组合（`docs/build.md` 有展开）。
+
+**GUI 与 CLI 是两个独立产物。** CLI 仍是单静态二进制的
+`AniSync-<版本>-<平台>-<架构>.zip`（既有发布流程由 `build.yml` 管，不受 GUI 影响）；
+GUI 是 `AniSync-GUI-<版本>-<平台>-<架构>.zip`，里面带着动态库（`build.yml` 的
+「发布物一律 zip」承诺对两者都成立，但从不在同一个包里混装）。

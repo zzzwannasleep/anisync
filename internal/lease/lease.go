@@ -51,6 +51,41 @@ var ErrHeld = errors.New("租约被占用")
 // 不处理就等于两个进程在写同一批订阅。
 var ErrLost = errors.New("租约已不属于本进程")
 
+// ErrHeartbeat 表示「这一次心跳没写进文件」，但**租约仍然属于本进程**。
+//
+// 它和 ErrLost 必须分开，因为两者正确的反应是相反的：
+//
+//	ErrLost     -> 立刻停写（别人已经接管，继续写就是双写覆盖）
+//	ErrHeartbeat-> 下一拍接着心跳就行，**绝不能停写**
+//
+// 为什么值得单列一个错误：以前调用方只能看到「Renew 返回了非 nil」，
+// 于是一次瞬时占用（Windows 上 32/5，磁盘忙、被别的进程短暂打开）
+// 会让常驻进程**错判自己被接管然后静默停止写入** ——
+// 而「一直失败」和「根本没在跑」在用户眼里本来就一样，
+// 这正是 README 里专门警告过的那种坑。
+//
+// 注意：真正落后于 fsutil 的重试预算、写确实失败时才会拿到它 ——
+// fsutil 内部已经会把「瞬时占用」等掉（见 internal/fsutil 的两个预算）。
+var ErrHeartbeat = errors.New("租约心跳写入失败（租约仍归本进程）")
+
+// HeartbeatError 是「心跳没写成」的具体错误，包着底层原因。
+//
+// 用类型而不是 fmt.Errorf("%w: %v") 是为了两头都保住：
+// `errors.Is(err, ErrHeartbeat)` 判类别，`errors.Is/As(err, <底层错误>)` 查原因。
+type HeartbeatError struct {
+	Err error
+}
+
+func (e *HeartbeatError) Error() string {
+	return "租约心跳写入失败（租约仍归本进程）：" + e.Err.Error()
+}
+
+// Unwrap 让 errors.Is / errors.As 能继续往下钻到底层错误。
+func (e *HeartbeatError) Unwrap() error { return e.Err }
+
+// Is 让 errors.Is(err, ErrHeartbeat) 成立。
+func (e *HeartbeatError) Is(target error) bool { return target == ErrHeartbeat }
+
 // Info 是租约文件的内容。
 type Info struct {
 	// PID 是持有者进程号，只用于给人看和排障。
@@ -200,6 +235,11 @@ func (l *Lease) Path() string { return l.path }
 // 必须先校验：老进程被挂起/机器休眠超过 TTL 之后租约可能已经被别人接管，
 // 它醒过来若无脑续约，就会把文件重新写成自己的名字 —— 而新持有者毫不知情，
 // 于是又变成两个写者。校验之后这种情况表现为 ErrLost，调用方应当停写。
+//
+// 两种失败**必须分得开**（调用方看到的是 errors.Is）：
+//
+//	errors.Is(err, ErrLost)      -> 真的丢了：停写
+//	errors.Is(err, ErrHeartbeat) -> 只这一次心跳没写成：下一拍接着续，不许停写
 func (l *Lease) Renew() error {
 	if l == nil {
 		return nil
@@ -212,7 +252,10 @@ func (l *Lease) Renew() error {
 		return fmt.Errorf("%w：现在是 pid %d（%s）持有", ErrLost, current.PID, describeNote(current.Note))
 	}
 	l.info.Heartbeat = l.nowFn()
-	return writeInfo(l.path, l.info)
+	if err := writeInfo(l.path, l.info); err != nil {
+		return &HeartbeatError{Err: err}
+	}
+	return nil
 }
 
 // KeepAlive 在后台定期续约，返回停止函数。
@@ -220,9 +263,14 @@ func (l *Lease) Renew() error {
 // 一轮同步可能跑十几分钟，而 TTL 只有几分钟；只在两轮之间续约会让
 // 「正在认真干活」的进程被别人判成已死，所以续约必须是独立的节奏。
 //
-// onLost 会在发现自己已不是持有者时被调用一次（之后停止续约）。
+// onLost 会在**发现自己已不是持有者**时被调用一次（之后停止续约）。
 // 调用方必须据此**停掉写入**：那是「我被人接管了」的唯一信号。
-func (l *Lease) KeepAlive(every time.Duration, onLost func(error)) (stop func()) {
+//
+// onTransient（可选）在「这次心跳没写进去、但租约还是我的」时被调用，
+// 之后**继续续约**。这个区分是必须的：把写失败当成丢租约，
+// 会让常驻进程因为一次瞬时占用就静默停写。
+// 参数是可变长的，为的是不动既有调用点的签名（那些点已经在 cmd 与测试里）。
+func (l *Lease) KeepAlive(every time.Duration, onLost func(error), onTransient ...func(error)) (stop func()) {
 	if l == nil {
 		return func() {}
 	}
@@ -231,6 +279,10 @@ func (l *Lease) KeepAlive(every time.Duration, onLost func(error)) (stop func())
 	}
 	if every <= 0 {
 		every = 30 * time.Second
+	}
+	var notify func(error)
+	if len(onTransient) > 0 {
+		notify = onTransient[0]
 	}
 	stopCh := make(chan struct{})
 	doneCh := make(chan struct{})
@@ -243,11 +295,19 @@ func (l *Lease) KeepAlive(every time.Duration, onLost func(error)) (stop func())
 			case <-stopCh:
 				return
 			case <-ticker.C:
-				if err := l.Renew(); err != nil {
+				err := l.Renew()
+				if err == nil {
+					continue
+				}
+				if errors.Is(err, ErrLost) {
 					if onLost != nil {
 						onLost(err)
 					}
 					return
+				}
+				// 心跳没写成 ≠ 丢了租约：接着续，绝不停写。
+				if notify != nil {
+					notify(err)
 				}
 			}
 		}

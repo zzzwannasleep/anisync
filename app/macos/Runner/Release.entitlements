@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Without this the sandboxed release build cannot open ANY outbound TCP
+	     connection: the sandbox denies network-outbound and every request fails
+	     with `Operation not permitted, errno = 1`, which the user reads as
+	     "instance unreachable". The Flutter template ships Release.entitlements
+	     with app-sandbox only (Debug/Profile get network.client via
+	     DebugProfile.entitlements), so a release .app would be offline-only.
+	     This is a hard requirement, not a hardening knob.
+
+	     network.server is deliberately NOT set here: the GUI never listens.
+	     Only the Go side does, and that is the CLI/`serve` binary, not this
+	     bundle. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

@@ -1,0 +1,18 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# The c-shared Go engine is a build product, never a committed file. Only the
+# .gitkeep markers that hold the ABI directories stay in git (docs/build.md).
+app/src/main/jniLibs/**/*.so
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks

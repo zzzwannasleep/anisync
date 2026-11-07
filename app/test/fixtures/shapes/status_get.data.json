@@ -1,0 +1,34 @@
+{
+  "configPath": "<WORKSPACE>/config.yaml",
+  "dataDir": "<WORKSPACE>/data",
+  "instances": [
+    {
+      "denyCount": 2,
+      "instance": "追番库",
+      "maxStandby": 12,
+      "profile": "收藏",
+      "ruleCount": 5,
+      "ruleFiles": [
+        {
+          "count": 4,
+          "kind": "primary",
+          "path": "<WORKSPACE>/raws.yaml"
+        },
+        {
+          "count": 2,
+          "kind": "deny",
+          "path": "<WORKSPACE>/deny.yaml"
+        }
+      ],
+      "siteOrder": [
+        "anibt"
+      ]
+    }
+  ],
+  "lease": {
+    "held": false
+  },
+  "platform": "<GOOS>",
+  "runs": [],
+  "version": "0.1.0"
+}

@@ -12,6 +12,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/zzzwannasleep/anisync/internal/fsutil"
 )
 
 type entry struct {
@@ -105,6 +107,13 @@ func (s *Store) Put(key string, value any) {
 }
 
 // Flush 把缓存原子地写回磁盘，并顺手丢掉过期条目。
+//
+// 写入走 fsutil.AtomicWriteFile（临时文件 + 改名 + 对瞬时占用重试）：
+// 原来的 `os.WriteFile(tmp)` + 裸 `os.Rename` 在 Windows 上会被另一个进程的
+// 瞬时占用打断，而**调用方普遍 `_ = store.Flush()`** —— 结果是缓存静默没落盘、
+// 下次重新拉上游。复用同一个写入原语是两行的事，且**没有动任何调用方的错误处理**
+// （错误照旧原样返回、调用方照旧忽略）。这不是「把静默忽略错误换成静默重试」：
+// 重试发生在写入原语内部且有上界，之后错误仍然如实抛出来。
 func (s *Store) Flush() error {
 	if !s.Enabled() {
 		return nil
@@ -141,11 +150,7 @@ func (s *Store) Flush() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.AtomicWriteFile(path, raw, 0o600)
 }
 
 // Stats 返回命中数、未命中数与条目数。

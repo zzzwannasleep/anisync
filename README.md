@@ -45,6 +45,11 @@ AniSync 是 ANI-RSS 的生态位补充，不是它的替代品：**让你不必�
 - **开箱即用**：`samples/` 里有五份完整配置可直接抄 —— 只追放流 / 只要字幕组 / 字幕组加放流 / 全收 / 一份配两套方案
 - **设置页能干活**：搜 Bangumi 选番剧（带封面与简介）直接加订阅，不用手抄 bgm 链接；深色 / 浅色双模式；每个区块各自带保存按钮，改哪块存哪块
 - **多形态**：命令行、本地 Web 设置页、Windows 通知区域托盘、macOS 菜单栏应用 —— 同一个程序，按需要挑一种跑法
+- **GUI 客户端**：另外还有一套带窗口的图形界面（**AniSync GUI**），支持 Windows / macOS / Android。
+  它**不是**上面那个程序换层皮，而是**另一个独立产物** —— CLI 依旧是
+  `AniSync-<版本>-<平台>-<架构>.zip`，GUI 是 `AniSync-GUI-` 那一组（逐个平台的产物名见下面「安装」里的表），两组分开下载、互不依赖。
+  GUI 的界面全部跑在 Flutter 上，业务逻辑仍由同一份 Go 引擎提供：Windows / macOS / Android 走
+  进程内直调（动态库随包发），也可以连另一台机器上的 `AniSync serve` 当遥控。
 - **一个文件夹就是全部**：单一二进制、无运行时依赖；配置与缓存都写在程序同目录，删掉文件夹即卸载干净
 
 ## 安装
@@ -81,6 +86,28 @@ AniSync/
 | Linux amd64 / arm64 | `AniSync-<版本>-linux-<架构>.zip` | `AniSync` |
 
 **发布物一律是 zip，没有裸二进制** —— 这样「解压出来的那个文件夹」就是程序全部的地盘。
+
+GUI 客户端是**另外一组**产物。桌面端同样一律 zip；Android 直接发 `.apk` ——
+APK 本身就是个 zip，再套一层只会让人多解一次：
+
+| 平台 | 下载 | 里面是什么 |
+| --- | --- | --- |
+| Windows x64 | `AniSync-GUI-<版本>-windows-x64.zip` | `AniSync.exe` 与 `anisync_core.dll`（同目录） |
+| macOS arm64 / amd64 | `AniSync-GUI-<版本>-macos-<架构>.zip` | `AniSync.app`（引擎在 `Contents/Frameworks/` 里） |
+| Android arm64-v8a / x86_64 | `AniSync-GUI-<版本>-android-<abi>.apk` | 安装包。手机几乎都是 `arm64-v8a`，`x86_64` 主要给模拟器 |
+
+**CLI 用 `amd64` / `arm64`，GUI 的 Windows 用 `x64`、Android 用 ABI 名** —— 这些不一致是
+**有意的，别统一掉**：CLI 的名字是写给脚本看的（要精确、要跟 Go 的 `GOARCH` 对齐）；GUI 的
+名字是写给人看的（`x64` 是 Flutter 与 Windows 自己的叫法），而 Android 用 `arm64-v8a` /
+`x86_64` 是因为**那两个字符串要和 APK 里 `lib/<abi>/` 的目录名逐字一致**，这样「这个包装的是
+哪份引擎」读文件名就对上了。口径的唯一权威在 `docs/build.md`。
+
+**装了 GUI 不影响 CLI。** 两个产物分开发布、各自解压，CLI 的用法与写盘位置一个字都没变
+（还是下面那条承诺：只在你解压出来的那个文件夹里写文件）。
+
+GUI 的 zip 解出来是 **`AniSync-GUI/`**，CLI 的仍是 `AniSync/` —— 两个顶层目录名**故意不一样**。
+同名的话，你把两个 zip 解到同一个父目录时系统会把它们**合并成一个文件夹**，
+然后 `AniSync.exe` 同名互相覆盖，无声无息丢掉一个。换个目录名就断了这条路。
 
 ### 三种跑法
 
@@ -122,6 +149,25 @@ xattr -dr com.apple.quarantine /path/to/AniSync/AniSync.app
 ```
 
 从源码构建见 [docs/build.md](docs/build.md)。
+
+### GUI 客户端
+
+除了上面三种 CLI 跑法，还有一套带窗口的图形界面：**AniSync GUI**
+（产物名见上面「安装」里的表）。它是**独立产物**，与 CLI 分开发布；
+装了 GUI 不影响 CLI，反之亦然。
+
+| 平台 | 形态 | 说明 |
+| --- | --- | --- |
+| Windows 10+ | 窗口应用 | 引擎 `anisync_core.dll` 就在 `AniSync.exe` 同目录 |
+| macOS | 窗口应用 `AniSync.app` | **不是菜单栏应用** —— 它在 Dock 里占位、开真正的窗口。菜单栏那套是 CLI 的 `tray`，两者互不干扰 |
+| Android 7.0+（API 24） | APK | 手机上可以连另一台机器上的 `AniSync serve` 节点做遥控 |
+
+GUI 做的是同一件事，只是不靠命令行：改配置、搜番剧加订阅、预览计划、看同步结果。
+它背后**两种后端是同一套操作**：本机跑引擎（桌面与 Android 都是进程内直调），或者连远端节点
+（`AniSync serve`）。界面上不区分自己接的是哪一种，也不用为了换后端学两遍。
+
+**写盘边界**：桌面端与 CLI 完全一致，配置和 `data/` 都在程序所在目录。
+Android 上没有「程序同目录」这回事（APK 目录只读），所以落在应用私有目录下。
 
 ## 快速开始
 
@@ -447,7 +493,7 @@ AniSync probe --site mikan --bgm 665390 --title "冰之城墙"
 | `AniSync probe` | 单站点探针，输出候选与错误 |
 | `AniSync plan` | 生成计划，只读；`--json` 输出 JSON，`--limit N` 限制条数，`--discover` 包含自动发现 |
 | `AniSync sync` | 生成并执行；`--preview` 仅预览，`-y` 跳过确认，`--add-missing` / `--discover` 包含新增订阅，`--force` 忽略已有租约 |
-| `AniSync serve` | 启动本地 Web 设置页 |
+| `AniSync serve` | 启动本地 Web 设置页；`--listen` 改监听地址、`--token` 给节点模式加鉴权（**绑非回环地址必须带 token**，否则拒绝启动） |
 | `AniSync tray` | 常驻托盘；`sync.intervalMinutes` 大于 0 时启用后台自动同步，`--sync-now` 启动即跑一轮，`--force` 接管已有租约 |
 
 ## 文档

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- The GUI links libanisync_core.dylib, which we build and embed
+	     ourselves (Frameworks/, see embed_core.sh). Debug builds sign it
+	     ad-hoc, and library validation would refuse to load a dylib whose
+	     signature does not match the app's. Release relies on re-signing the
+	     dylib with the real identity instead, so this stays debug-only. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

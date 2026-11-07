@@ -1,0 +1,26 @@
+// Application-level settings for the Runner target.
+//
+// This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
+// future. If not, the values below would default to using the project name when this becomes a
+// 'flutter create' template.
+
+// The application's name. This is also the name of the built bundle
+// (AniSync.app) and the title of the Flutter window.
+//
+// It MUST stay identical to what the CLI produces on macOS and to what
+// README.md/docs/build.md advertise: the CLI already ships "AniSync.app", and
+// this value decides the GUI's bundle name too. If it ever drifts back to the
+// flutter-create default (the pubspec project name in snake_case) the two
+// macOS products stop matching, which is how users and packagers get confused.
+// Anything that derives a path from the .app name has to follow this value:
+// PRODUCT_NAME is expanded automatically, so "$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app"
+// is the correct way to write such a path.
+PRODUCT_NAME = AniSync
+
+// The application's bundle identifier.
+// Kept in lockstep with the Android applicationId (com.zzzwannasleep.anisync)
+// and the iOS/macOS data-directory convention in docs/ops-api.md §5.
+PRODUCT_BUNDLE_IDENTIFIER = com.zzzwannasleep.anisync
+
+// The copyright displayed in application information
+PRODUCT_COPYRIGHT = Copyright © 2026 com.zzzwannasleep. All rights reserved.
